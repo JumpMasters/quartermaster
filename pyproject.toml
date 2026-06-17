@@ -1,0 +1,107 @@
+[project]
+name = "quartermaster"
+version = "0.0.0"
+description = "A warehouse inventory engine that stays correct under concurrent load."
+readme = "README.md"
+requires-python = ">=3.13"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+dependencies = [
+    "fastapi>=0.115",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.5",
+    "sqlalchemy>=2.0",
+    "asyncpg>=0.30",
+    "alembic>=1.14",
+    "uvicorn>=0.32",
+]
+
+[project.urls]
+Repository = "https://github.com/JumpTechCode/quartermaster"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "hypothesis>=6.112",
+    "ruff>=0.7",
+    "mypy>=1.13",
+    "import-linter>=2.1",
+    "pip-audit>=2.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/quartermaster"]
+
+# --- Lint / format ---------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "tests", "loadtest"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "SIM", "RUF", "ASYNC"]
+
+# --- Types -----------------------------------------------------------------
+[tool.mypy]
+python_version = "3.13"
+strict = true
+files = ["src", "tests"]
+plugins = ["pydantic.mypy"]
+
+# --- Tests / coverage ------------------------------------------------------
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers --strict-config"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "integration: tests that require a running Postgres (deselect with -m 'not integration')",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["quartermaster"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80
+
+# --- Architecture boundaries (the import-DAG guard) ------------------------
+[tool.importlinter]
+root_package = "quartermaster"
+
+[[tool.importlinter.contracts]]
+name = "domain is a pure leaf (imports nothing internal)"
+type = "forbidden"
+source_modules = ["quartermaster.domain"]
+forbidden_modules = [
+    "quartermaster.application",
+    "quartermaster.adapters",
+    "quartermaster.api",
+    "quartermaster.workers",
+    "quartermaster.config",
+]
+
+[[tool.importlinter.contracts]]
+name = "application depends only on domain (declares ports; never imports concretes)"
+type = "forbidden"
+source_modules = ["quartermaster.application"]
+forbidden_modules = [
+    "quartermaster.adapters",
+    "quartermaster.api",
+    "quartermaster.workers",
+]
+
+[[tool.importlinter.contracts]]
+name = "only the composition root wires concretes (api/workers stay off adapters)"
+type = "forbidden"
+source_modules = [
+    "quartermaster.api",
+    "quartermaster.workers",
+]
+forbidden_modules = ["quartermaster.adapters"]
