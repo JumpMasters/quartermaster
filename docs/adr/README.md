@@ -10,6 +10,19 @@ The format follows Michael Nygard's
 ## Index
 
 - [0001 — Record architecture decisions](0001-record-architecture-decisions.md)
+- [0002 — Relational, transactional core over event sourcing](0002-relational-transactional-core.md)
+- [0003 — Two flavours of optimistic concurrency control](0003-two-flavour-occ.md)
+- [0004 — Idempotency caches successes and hard rejections; business failures roll back](0004-idempotency-caching-policy.md)
+- [0005 — READ COMMITTED with conditional writes on the hot paths](0005-read-committed-conditional-writes.md)
+- [0006 — On-hand / reserved / available reservation model with line-level partiality](0006-reservation-model-line-partiality.md)
+- [0007 — Inbound and outbound flows are decoupled](0007-inbound-outbound-decoupling.md)
+- [0008 — Returns are inbound RMA documents that reuse the Receipt lifecycle](0008-returns-as-inbound-rma.md)
+- [0009 — Order cancellation is release-only (pre-pick states)](0009-order-cancel-release-only.md)
+- [0010 — Time-to-live and background reapers for reservations and idempotency keys](0010-ttl-reapers.md)
+- [0011 — Conservation is verified by an offline oracle, not on the command path](0011-conservation-offline-oracle.md)
+- [0012 — Architectural boundaries are enforced by import-linter](0012-import-linter-boundaries.md)
+- [0013 — Entity identity typing: NewType over primitives, natural codes, UUID document IDs](0013-entity-identity-typing.md)
+- [0014 — Postgres-early testing with testcontainers](0014-postgres-early-testcontainers.md)
 
 ## Adding a record
 
