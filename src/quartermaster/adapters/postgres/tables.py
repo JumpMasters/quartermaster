@@ -28,6 +28,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
 
 from quartermaster.domain.catalog import LocationKind
+from quartermaster.domain.idempotency import IdempotencyStatus
 from quartermaster.domain.movements import MovementType
 from quartermaster.domain.receipts import ReceiptKind
 from quartermaster.domain.state_machines import OrderState, ReceiptState, ReservationState
@@ -178,4 +179,5 @@ idempotency_key = Table(
     Column("status", Text, nullable=False),
     Column("response", JSONB, nullable=True),
     Column("created_at", TIMESTAMP(timezone=True), nullable=False),
+    CheckConstraint(_enum_check("status", [s.value for s in IdempotencyStatus]), name="status"),
 )

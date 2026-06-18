@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from quartermaster.adapters.postgres.identifiers import new_uuid7
+from quartermaster.adapters.postgres.identifiers import (
+    new_movement_id,
+    new_order_id,
+    new_reservation_id,
+    new_uuid7,
+)
 
 
 def test_new_uuid7_is_version_7() -> None:
@@ -26,3 +31,15 @@ def test_new_uuid7_timestamp_prefix_is_non_decreasing() -> None:
 
     prefixes = [ts_prefix(new_uuid7()) for _ in range(1000)]
     assert prefixes == sorted(prefixes)
+
+
+def test_typed_minters_return_version_7_uuids() -> None:
+    assert new_order_id().version == 7
+    assert new_reservation_id().version == 7
+    assert new_movement_id().version == 7
+
+
+def test_typed_minters_are_distinct_per_call() -> None:
+    assert new_order_id() != new_order_id()
+    assert new_reservation_id() != new_reservation_id()
+    assert new_movement_id() != new_movement_id()

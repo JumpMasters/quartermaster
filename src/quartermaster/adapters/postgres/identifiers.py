@@ -16,7 +16,24 @@ from uuid import UUID
 
 import uuid_utils
 
+from quartermaster.domain.ids import MovementId, OrderId, ReservationId
+
 
 def new_uuid7() -> UUID:
     """Return a fresh time-ordered UUIDv7 as a stdlib :class:`uuid.UUID`."""
     return UUID(int=uuid_utils.uuid7().int)
+
+
+def new_order_id() -> OrderId:
+    """Mint a fresh order identifier."""
+    return OrderId(new_uuid7())
+
+
+def new_reservation_id() -> ReservationId:
+    """Mint a fresh reservation identifier."""
+    return ReservationId(new_uuid7())
+
+
+def new_movement_id() -> MovementId:
+    """Mint a fresh movement (ledger entry) identifier."""
+    return MovementId(new_uuid7())
