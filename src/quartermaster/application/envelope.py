@@ -26,6 +26,18 @@ from quartermaster.domain.ids import IdempotencyKey
 
 MAX_OCC_RETRIES = 5
 
+_REJECTION_TYPES: dict[str, type[Exception]] = {
+    "IllegalTransition": IllegalTransition,
+    "OrderNotFound": OrderNotFound,
+}
+
+
+def _rejection_error(response: dict[str, Any] | None) -> Exception:
+    payload = response or {}
+    error_type = _REJECTION_TYPES.get(str(payload.get("error")), IllegalTransition)
+    return error_type(str(payload.get("detail", "rejected")))
+
+
 # ADR-0004 classification of handler-raised domain errors.
 HARD_REJECTION: tuple[type[Exception], ...] = (IllegalTransition, OrderNotFound)
 TRANSIENT: tuple[type[Exception], ...] = (InsufficientStock,)
@@ -57,6 +69,8 @@ async def execute[C: Command, R: Response](
                 assert stored is not None  # claim said EXISTS, so the row is there
                 if stored.command_fingerprint != fingerprint:
                     raise IdempotencyKeyReuse(command.key)
+                if stored.status is IdempotencyStatus.REJECTED:
+                    raise _rejection_error(stored.response)
                 assert stored.response is not None
                 return decode(stored.response)
             try:

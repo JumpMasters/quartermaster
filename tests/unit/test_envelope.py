@@ -138,3 +138,20 @@ async def test_occ_conflict_exhausts_retries() -> None:
         await execute(fake_factory(uow), FakeCommand(), handler, decode_fake)
 
     assert uow.commits == 0
+
+
+async def test_replay_of_cached_rejection_reraises() -> None:
+    from quartermaster.domain.errors import IllegalTransition
+
+    stored = StoredResponse(
+        "fp",
+        IdempotencyStatus.REJECTED,
+        {"error": "IllegalTransition", "detail": "shipped -> allocated"},
+    )
+    uow = FakeUnitOfWork(idempotency=FakeIdempotencyRepo(ClaimOutcome.EXISTS, stored))
+
+    async def handler(u: UnitOfWork, c: FakeCommand) -> FakeResult:
+        raise AssertionError("handler must not run on replay")
+
+    with pytest.raises(IllegalTransition):
+        await execute(fake_factory(uow), FakeCommand(), handler, decode_fake)
