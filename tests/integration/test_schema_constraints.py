@@ -17,6 +17,7 @@ from quartermaster.adapters.postgres.tables import (
     order_line,
     orders,
     receipt,
+    receipt_line,
     reservation,
     sku,
     stock,
@@ -105,6 +106,30 @@ async def test_customer_rma_requires_an_origin_order(db: AsyncConnection) -> Non
                 version=1,
                 created_at=_now(),
                 origin_order_id=None,  # an RMA must reference an order
+            )
+        )
+
+
+async def test_receipt_line_received_cannot_exceed_expected(db: AsyncConnection) -> None:
+    await _seed_reference(db)
+    receipt_id = new_uuid7()
+    await db.execute(
+        receipt.insert().values(
+            receipt_id=receipt_id,
+            kind="supplier_receipt",
+            state="expected",
+            version=1,
+            created_at=_now(),
+            origin_order_id=None,
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await db.execute(
+            receipt_line.insert().values(
+                receipt_id=receipt_id,
+                sku_id="SKU1",
+                expected_qty=5,
+                received_qty=9,  # received > expected: violates the line check
             )
         )
 
