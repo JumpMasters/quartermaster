@@ -65,7 +65,13 @@ class OrderRepo(Protocol):
         """CAS the order header; bump version. False == 0 rows == conflict."""
         ...
 
-    async def add_allocated(self, order_id: OrderId, sku: SkuId, qty: int) -> None: ...
+    async def add_allocated(self, order_id: OrderId, sku: SkuId, qty: int) -> bool:
+        """Increment allocated_qty by qty only if the result would not exceed ordered_qty.
+
+        Returns True if the row was updated, False if the guard rejected the write
+        (allocated_qty + qty > ordered_qty).  A False return is an OCC conflict signal.
+        """
+        ...
 
 
 class ReservationRepo(Protocol):

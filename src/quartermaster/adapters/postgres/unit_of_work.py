@@ -132,12 +132,17 @@ class PgOrderRepo:
         )
         return result.rowcount == 1
 
-    async def add_allocated(self, order_id: OrderId, sku: SkuId, qty: int) -> None:
-        await self._conn.execute(
+    async def add_allocated(self, order_id: OrderId, sku: SkuId, qty: int) -> bool:
+        result = await self._conn.execute(
             order_line.update()
-            .where(order_line.c.order_id == order_id, order_line.c.sku_id == sku)
+            .where(
+                order_line.c.order_id == order_id,
+                order_line.c.sku_id == sku,
+                order_line.c.allocated_qty + qty <= order_line.c.ordered_qty,
+            )
             .values(allocated_qty=order_line.c.allocated_qty + qty)
         )
+        return result.rowcount == 1
 
 
 class PgReservationRepo:

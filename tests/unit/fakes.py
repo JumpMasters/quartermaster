@@ -58,10 +58,13 @@ class FakeOrderRepo:
         order: Order | None = None,
         lines: list[OrderLine] | None = None,
         cas_result: bool = True,
+        *,
+        add_allocated_result: bool = True,
     ) -> None:
         self.order = order
         self.lines = lines or []
         self.cas_result = cas_result
+        self.add_allocated_result = add_allocated_result
         self.cas_calls: list[tuple[OrderId, OrderState, int, OrderState]] = []
         self.allocated: list[tuple[OrderId, SkuId, int]] = []
 
@@ -81,8 +84,9 @@ class FakeOrderRepo:
         self.cas_calls.append((order_id, expected_state, expected_version, new_state))
         return self.cas_result
 
-    async def add_allocated(self, order_id: OrderId, sku: SkuId, qty: int) -> None:
+    async def add_allocated(self, order_id: OrderId, sku: SkuId, qty: int) -> bool:
         self.allocated.append((order_id, sku, qty))
+        return self.add_allocated_result
 
 
 class FakeReservationRepo:

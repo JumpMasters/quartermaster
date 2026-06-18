@@ -86,9 +86,12 @@ def _harness(
     order: Order | None = None,
     lines: list[OrderLine] | None = None,
     cas_result: bool = True,
+    add_allocated_result: bool = True,
 ) -> _Harness:
     stock = FakeStockRepo(cells or {})
-    orders = FakeOrderRepo(order, lines or [], cas_result)
+    orders = FakeOrderRepo(
+        order, lines or [], cas_result, add_allocated_result=add_allocated_result
+    )
     reservations = FakeReservationRepo()
     movements = FakeMovementRepo()
     uow = FakeUnitOfWork(stock=stock, orders=orders, reservations=reservations, movements=movements)
@@ -191,6 +194,24 @@ async def test_cas_conflict_raises_occ_conflict() -> None:
         order=_order(OrderState.CREATED),
         lines=[_line("S", 5)],
         cas_result=False,
+    )
+    with pytest.raises(OccConflict):
+        await _run(h.uow)
+
+
+async def test_add_allocated_guard_rejection_raises_occ_conflict() -> None:
+    """A non-applying add_allocated (guard rejected) must propagate as OccConflict.
+
+    This models the concurrent same-order race where the losing transaction's
+    add_allocated guard fires because allocated_qty + take would exceed ordered_qty.
+    The envelope retries, re-reads the order as ALLOCATED, and the retry raises
+    IllegalTransition — the designed outcome.
+    """
+    h = _harness(
+        cells={(SkuId("S"), LocationId("L1")): 5},
+        order=_order(OrderState.CREATED),
+        lines=[_line("S", 5)],
+        add_allocated_result=False,
     )
     with pytest.raises(OccConflict):
         await _run(h.uow)

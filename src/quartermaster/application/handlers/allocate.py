@@ -83,7 +83,10 @@ async def allocate(
                     command_id=command.key,
                 )
             )
-            await uow.orders.add_allocated(command.order_id, line.sku_id, take)
+            if not await uow.orders.add_allocated(command.order_id, line.sku_id, take):
+                raise OccConflict(
+                    f"order {command.order_id} line {line.sku_id} changed under allocate"
+                )
             reservation_ids.append(reservation_id)
             remaining -= take
         allocated_this_line = line.outstanding_to_allocate - remaining
