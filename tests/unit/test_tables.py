@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from sqlalchemy import CheckConstraint
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateTable
 
@@ -21,14 +20,6 @@ EXPECTED_TABLES = {
     "movement",
     "idempotency_key",
 }
-
-
-def _check_names(table_name: str) -> set[str]:
-    return {
-        c.name
-        for c in metadata.tables[table_name].constraints
-        if isinstance(c, CheckConstraint) and isinstance(c.name, str)
-    }
 
 
 def _ddl(table_name: str) -> str:
