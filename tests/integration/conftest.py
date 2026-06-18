@@ -13,6 +13,7 @@ event loop (no session-loop wiring needed).
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -25,9 +26,16 @@ from quartermaster.adapters.postgres.engine import create_engine
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """Auto-mark every test in this directory as 'integration'."""
+    """Auto-mark tests under THIS directory (tests/integration/) as 'integration'.
+
+    The hook receives the whole session's collected items, so it must scope to
+    this directory's tree; otherwise unit tests collected in the same run would
+    be marked integration too (and deselected by ``-m 'not integration'``).
+    """
+    integration_dir = Path(__file__).parent
     for item in items:
-        item.add_marker("integration")
+        if integration_dir in item.path.parents:
+            item.add_marker("integration")
 
 
 def _migrate_to_head(async_url: str) -> None:

@@ -63,8 +63,9 @@ ignore_missing_imports = true
 # --- Tests / coverage ------------------------------------------------------
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers --strict-config"
-testpaths = ["tests"]
+pythonpath = ["."]
 asyncio_mode = "auto"
+testpaths = ["tests"]
 markers = [
     "integration: tests that require a running Postgres (deselect with -m 'not integration')",
 ]
