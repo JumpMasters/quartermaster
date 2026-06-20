@@ -2,8 +2,8 @@
 
 A :class:`UnitOfWork` owns exactly one transaction and exposes the repos bound
 to it. ``application`` declares these contracts; ``adapters`` implement them and
-are injected at the composition root. Methods are minimal — only what the
-``allocate`` command needs; each repo grows with future commands.
+are injected at the composition root. Methods are minimal — only what the commands in play need;
+each repo grows as new commands arrive.
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ class OrderRepo(Protocol):
         """CAS the order header; bump version. False == 0 rows == conflict."""
         ...
 
-    async def add_allocated(self, order_id: OrderId, sku: SkuId, qty: int) -> bool:
+    async def add_allocated(self, order_id: OrderId, sku_id: SkuId, qty: int) -> bool:
         """Increment allocated_qty by qty only if the result would not exceed ordered_qty.
 
         Returns True if the row was updated, False if the guard rejected the write

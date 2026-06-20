@@ -87,8 +87,8 @@ class FakeOrderRepo:
         self.cas_calls.append((order_id, expected_state, expected_version, new_state))
         return self.cas_result
 
-    async def add_allocated(self, order_id: OrderId, sku: SkuId, qty: int) -> bool:
-        self.allocated.append((order_id, sku, qty))
+    async def add_allocated(self, order_id: OrderId, sku_id: SkuId, qty: int) -> bool:
+        self.allocated.append((order_id, sku_id, qty))
         return self.add_allocated_result
 
     async def insert_order(self, order: Order, lines: Sequence[OrderLine]) -> None:
