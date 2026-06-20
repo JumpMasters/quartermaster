@@ -18,13 +18,15 @@ from quartermaster.domain.ids import (
     IdempotencyKey,
     LocationId,
     OrderId,
+    ReceiptId,
     ReservationId,
     SkuId,
 )
 from quartermaster.domain.movements import Movement
 from quartermaster.domain.orders import Order, OrderLine
+from quartermaster.domain.receipts import Receipt, ReceiptLine
 from quartermaster.domain.reservations import Reservation
-from quartermaster.domain.state_machines import OrderState, ReservationState
+from quartermaster.domain.state_machines import OrderState, ReceiptState, ReservationState
 
 
 class ClaimOutcome(Enum):
@@ -63,6 +65,13 @@ class StockRepo(Protocol):
         """Cancel/release: ``reserved -= qty`` guarded by ``reserved >= qty`` (on-hand unchanged).
 
         Returns True if the row was updated, False if the guard rejected the write.
+        """
+        ...
+
+    async def add_on_hand(self, sku: SkuId, location: LocationId, qty: int) -> None:
+        """Receive: ``qty_on_hand += qty`` at the cell, inserting it at reserved=0 if absent.
+
+        Always succeeds — on-hand only grows on receipt; there is no availability guard.
         """
         ...
 
@@ -109,6 +118,32 @@ class OrderRepo(Protocol):
         ...
 
 
+class ReceiptRepo(Protocol):
+    async def get(self, receipt_id: ReceiptId) -> Receipt | None: ...
+    async def get_lines(self, receipt_id: ReceiptId) -> list[ReceiptLine]: ...
+    async def insert_receipt(self, receipt: Receipt, lines: Sequence[ReceiptLine]) -> None:
+        """Insert a new receipt header and its lines (creation; no guard)."""
+        ...
+
+    async def cas_state(
+        self,
+        receipt_id: ReceiptId,
+        expected_state: ReceiptState,
+        expected_version: int,
+        new_state: ReceiptState,
+    ) -> bool:
+        """CAS the receipt header; bump version. False == 0 rows == conflict."""
+        ...
+
+    async def add_received(self, receipt_id: ReceiptId, sku_id: SkuId, qty: int) -> bool:
+        """Increment received_qty by qty only if received_qty + qty <= expected_qty.
+
+        Returns True if the row was updated, False if the guard rejected the write
+        (an OCC/invariant signal).
+        """
+        ...
+
+
 class ReservationRepo(Protocol):
     async def add(self, reservation: Reservation) -> None: ...
 
@@ -132,6 +167,10 @@ class CatalogRepo(Protocol):
         """Return the subset of ``skus`` that do not exist in the catalog."""
         ...
 
+    async def location_exists(self, location: LocationId) -> bool:
+        """Whether ``location`` exists in the catalog."""
+        ...
+
 
 class IdempotencyRepo(Protocol):
     async def claim(self, key: IdempotencyKey, fingerprint: str) -> ClaimOutcome: ...
@@ -146,6 +185,7 @@ class UnitOfWork(Protocol):
 
     stock: StockRepo
     orders: OrderRepo
+    receipts: ReceiptRepo
     reservations: ReservationRepo
     movements: MovementRepo
     idempotency: IdempotencyRepo
