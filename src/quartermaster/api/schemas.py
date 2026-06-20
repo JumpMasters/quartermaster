@@ -83,6 +83,17 @@ class PackResponse(BaseModel):
     state: str
 
 
+class ShippedLineOut(BaseModel):
+    sku_id: str
+    shipped: int
+
+
+class ShipResponse(BaseModel):
+    order_id: UUID
+    state: str
+    lines: list[ShippedLineOut]
+
+
 class ErrorResponse(BaseModel):
     error: str
     detail: str
