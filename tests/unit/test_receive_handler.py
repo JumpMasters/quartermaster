@@ -12,6 +12,7 @@ import pytest
 from quartermaster.application.commands import ReceiveCommand
 from quartermaster.application.errors import OccConflict
 from quartermaster.application.handlers.receive import receive
+from quartermaster.application.results import ReceiveResult
 from quartermaster.domain.errors import (
     IllegalTransition,
     InvalidReceiptLine,
@@ -73,7 +74,7 @@ def _harness(
 
 async def _run(
     uow: FakeUnitOfWork, lines: tuple[tuple[SkuId, int], ...] = ((SkuId("A"), 5),)
-) -> object:
+) -> ReceiveResult:
     return await receive(
         uow, ReceiveCommand(RID, LOC, lines, KEY), now=_now, new_movement_id=_mov_ids()
     )
