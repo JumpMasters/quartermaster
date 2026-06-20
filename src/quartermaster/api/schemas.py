@@ -18,7 +18,7 @@ class OrderLineInput(BaseModel):
 
 
 class CreateOrderRequest(BaseModel):
-    lines: list[OrderLineInput] = Field(min_length=1)
+    lines: list[OrderLineInput] = Field(min_length=1, max_length=100)
 
     @field_validator("lines")
     @classmethod
