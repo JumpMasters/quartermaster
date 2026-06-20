@@ -18,6 +18,7 @@ from quartermaster.api.schemas import (
     CreatedLineOut,
     CreateOrderRequest,
     CreateOrderResponse,
+    CreateReceiptRequest,
     CreateReceiptResponse,
     ExpectedLineOut,
     OrderLineView,
@@ -32,7 +33,6 @@ from quartermaster.api.schemas import (
     ReceiveResponse,
     ShippedLineOut,
     ShipResponse,
-    CreateReceiptRequest,
 )
 from quartermaster.application.handlers.allocate import run_allocate
 from quartermaster.application.handlers.arrive import run_arrive
@@ -199,9 +199,7 @@ def build_router(deps: Deps) -> APIRouter:
             state=view.state.value,
             version=view.version,
             lines=[
-                ReceiptLineView(
-                    sku_id=line.sku_id, expected=line.expected, received=line.received
-                )
+                ReceiptLineView(sku_id=line.sku_id, expected=line.expected, received=line.received)
                 for line in view.lines
             ],
         )
@@ -258,7 +256,9 @@ def build_router(deps: Deps) -> APIRouter:
         return ReceiveResponse(
             receipt_id=result.receipt_id,
             state=result.state.value,
-            lines=[ReceiveLineOut(sku_id=line.sku_id, received=line.received) for line in result.lines],
+            lines=[
+                ReceiveLineOut(sku_id=line.sku_id, received=line.received) for line in result.lines
+            ],
         )
 
     return router

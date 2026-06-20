@@ -62,13 +62,17 @@ async def test_receive_full_lifecycle_lands_stock(committed_db: AsyncEngine) -> 
     created = await _create(committed_db, ((SkuId("S"), 5),), "create")
     await _arrive(committed_db, created.receipt_id, "arrive")
 
-    result = await _receive(committed_db, created.receipt_id, LocationId("RCV"), ((SkuId("S"), 5),), "recv")
+    result = await _receive(
+        committed_db, created.receipt_id, LocationId("RCV"), ((SkuId("S"), 5),), "recv"
+    )
 
     assert result.state is ReceiptState.RECEIVED
     assert [(line.sku_id, line.received) for line in result.lines] == [("S", 5)]
     async with committed_db.connect() as conn:
         header = (
-            await conn.execute(select(receipt.c.state).where(receipt.c.receipt_id == created.receipt_id))
+            await conn.execute(
+                select(receipt.c.state).where(receipt.c.receipt_id == created.receipt_id)
+            )
         ).scalar_one()
         line = (
             await conn.execute(
@@ -86,7 +90,10 @@ async def test_receive_full_lifecycle_lands_stock(committed_db: AsyncEngine) -> 
             await conn.execute(
                 select(func.count())
                 .select_from(movement)
-                .where(movement.c.type == MovementType.RECEIVE.value, movement.c.ref == created.receipt_id)
+                .where(
+                    movement.c.type == MovementType.RECEIVE.value,
+                    movement.c.ref == created.receipt_id,
+                )
             )
         ).scalar_one()
         landed = (
@@ -109,7 +116,9 @@ async def test_receive_partial_records_shortfall(committed_db: AsyncEngine) -> N
     created = await _create(committed_db, ((SkuId("S"), 10),), "c")
     await _arrive(committed_db, created.receipt_id, "a")
 
-    result = await _receive(committed_db, created.receipt_id, LocationId("RCV"), ((SkuId("S"), 4),), "r")
+    result = await _receive(
+        committed_db, created.receipt_id, LocationId("RCV"), ((SkuId("S"), 4),), "r"
+    )
 
     assert result.state is ReceiptState.RECEIVED
     async with committed_db.connect() as conn:
@@ -135,7 +144,9 @@ async def test_same_key_receive_fired_concurrently_is_one_effect(committed_db: A
 
     results = await asyncio.gather(
         *(
-            _receive(committed_db, created.receipt_id, LocationId("RCV"), ((SkuId("S"), 5),), "same")
+            _receive(
+                committed_db, created.receipt_id, LocationId("RCV"), ((SkuId("S"), 5),), "same"
+            )
             for _ in range(6)
         )
     )
@@ -146,7 +157,10 @@ async def test_same_key_receive_fired_concurrently_is_one_effect(committed_db: A
             await conn.execute(
                 select(func.count())
                 .select_from(movement)
-                .where(movement.c.ref == created.receipt_id, movement.c.type == MovementType.RECEIVE.value)
+                .where(
+                    movement.c.ref == created.receipt_id,
+                    movement.c.type == MovementType.RECEIVE.value,
+                )
             )
         ).scalar_one()
         cell = (

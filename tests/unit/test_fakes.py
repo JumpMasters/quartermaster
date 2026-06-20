@@ -32,8 +32,14 @@ def test_claim_outcome_has_two_members() -> None:
 
 
 async def test_fake_receipt_repo_records_and_returns() -> None:
-    receipt = Receipt(_RID, ReceiptKind.SUPPLIER_RECEIPT, ReceiptState.EXPECTED, 1,
-                      datetime(2026, 6, 20, tzinfo=UTC), None)
+    receipt = Receipt(
+        _RID,
+        ReceiptKind.SUPPLIER_RECEIPT,
+        ReceiptState.EXPECTED,
+        1,
+        datetime(2026, 6, 20, tzinfo=UTC),
+        None,
+    )
     line = ReceiptLine(_RID, SkuId("A"), 5, 0)
     repo = FakeReceiptRepo(receipt=receipt, lines=[line])
     assert await repo.get(_RID) is receipt

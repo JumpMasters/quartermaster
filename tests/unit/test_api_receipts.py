@@ -31,7 +31,9 @@ def _client(uow: FakeUnitOfWork) -> httpx.AsyncClient:
 
 
 def _arrived_receipt() -> Receipt:
-    return Receipt(ReceiptId(_RCID), ReceiptKind.SUPPLIER_RECEIPT, ReceiptState.ARRIVED, 2, _FIXED, None)
+    return Receipt(
+        ReceiptId(_RCID), ReceiptKind.SUPPLIER_RECEIPT, ReceiptState.ARRIVED, 2, _FIXED, None
+    )
 
 
 async def test_create_receipt_201_with_location() -> None:
@@ -57,8 +59,12 @@ async def test_create_receipt_201_with_location() -> None:
 
 
 async def test_arrive_returns_arrived() -> None:
-    receipt = Receipt(ReceiptId(_RCID), ReceiptKind.SUPPLIER_RECEIPT, ReceiptState.EXPECTED, 1, _FIXED, None)
-    uow = FakeUnitOfWork(receipts=FakeReceiptRepo(receipt=receipt), idempotency=FakeIdempotencyRepo())
+    receipt = Receipt(
+        ReceiptId(_RCID), ReceiptKind.SUPPLIER_RECEIPT, ReceiptState.EXPECTED, 1, _FIXED, None
+    )
+    uow = FakeUnitOfWork(
+        receipts=FakeReceiptRepo(receipt=receipt), idempotency=FakeIdempotencyRepo()
+    )
     async with _client(uow) as client:
         resp = await client.post(f"/receipts/{_RCID}/arrive", headers={"Idempotency-Key": "k1"})
     assert resp.status_code == 200

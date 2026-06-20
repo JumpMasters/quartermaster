@@ -55,9 +55,7 @@ async def receive(
     for sku, qty in command.lines:
         line = lines_by_sku.get(sku)
         if line is None:
-            raise InvalidReceiptLine(
-                f"sku {sku} is not a line on receipt {command.receipt_id}"
-            )
+            raise InvalidReceiptLine(f"sku {sku} is not a line on receipt {command.receipt_id}")
         if line.received + qty > line.expected:
             raise InvalidReceiptLine(
                 f"receiving {qty} of {sku} exceeds expected "

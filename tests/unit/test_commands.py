@@ -110,12 +110,8 @@ def test_cancel_fingerprint_differs_from_ship() -> None:
 
 
 def test_create_receipt_fingerprint_is_line_order_independent() -> None:
-    a = CreateReceiptCommand(
-        ((SkuId("A"), 1), (SkuId("B"), 2)), IdempotencyKey("k1")
-    )
-    b = CreateReceiptCommand(
-        ((SkuId("B"), 2), (SkuId("A"), 1)), IdempotencyKey("k2")
-    )
+    a = CreateReceiptCommand(((SkuId("A"), 1), (SkuId("B"), 2)), IdempotencyKey("k1"))
+    b = CreateReceiptCommand(((SkuId("B"), 2), (SkuId("A"), 1)), IdempotencyKey("k2"))
     assert a.fingerprint() == b.fingerprint()
 
 
@@ -126,10 +122,6 @@ def test_arrive_fingerprint_independent_of_key() -> None:
 
 
 def test_receive_fingerprint_depends_on_location() -> None:
-    a = ReceiveCommand(
-        _RID, LocationId("L1"), ((SkuId("A"), 1),), IdempotencyKey("k")
-    )
-    b = ReceiveCommand(
-        _RID, LocationId("L2"), ((SkuId("A"), 1),), IdempotencyKey("k")
-    )
+    a = ReceiveCommand(_RID, LocationId("L1"), ((SkuId("A"), 1),), IdempotencyKey("k"))
+    b = ReceiveCommand(_RID, LocationId("L2"), ((SkuId("A"), 1),), IdempotencyKey("k"))
     assert a.fingerprint() != b.fingerprint()

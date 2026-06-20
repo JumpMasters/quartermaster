@@ -38,8 +38,14 @@ _RID = ReceiptId(UUID("00000000-0000-7000-8000-000000000005"))
 
 
 async def test_load_receipt_returns_view() -> None:
-    receipt = Receipt(_RID, ReceiptKind.SUPPLIER_RECEIPT, ReceiptState.EXPECTED, 1,
-                      datetime(2026, 6, 20, tzinfo=UTC), None)
+    receipt = Receipt(
+        _RID,
+        ReceiptKind.SUPPLIER_RECEIPT,
+        ReceiptState.EXPECTED,
+        1,
+        datetime(2026, 6, 20, tzinfo=UTC),
+        None,
+    )
     line = ReceiptLine(_RID, SkuId("A"), 5, 0)
     uow = FakeUnitOfWork(receipts=FakeReceiptRepo(receipt=receipt, lines=[line]))
     view = await load_receipt(fake_factory(uow), _RID)

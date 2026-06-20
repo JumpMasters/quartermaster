@@ -52,9 +52,7 @@ class ReceiptView:
     lines: tuple[ReceiptLine, ...]
 
 
-async def load_receipt(
-    uow_factory: UnitOfWorkFactory, receipt_id: ReceiptId
-) -> ReceiptView | None:
+async def load_receipt(uow_factory: UnitOfWorkFactory, receipt_id: ReceiptId) -> ReceiptView | None:
     """Read a receipt header and its lines; ``None`` if the receipt does not exist."""
     async with uow_factory() as uow:
         receipt = await uow.receipts.get(receipt_id)
