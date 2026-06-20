@@ -112,9 +112,9 @@ async def test_pick_consumes_reservations_and_advances_to_picked() -> None:
     mv = h.movements.appended[0]
     assert mv.type is MovementType.PICK and mv.from_location == LocationId("L1")
     assert mv.to_location is None and mv.qty == 5
-    assert [(c[1], c[3]) for c in h.orders.cas_calls] == [
-        (OrderState.ALLOCATED, OrderState.PICKING),
-        (OrderState.PICKING, OrderState.PICKED),
+    assert [(c[1], c[2], c[3]) for c in h.orders.cas_calls] == [
+        (OrderState.ALLOCATED, 1, OrderState.PICKING),
+        (OrderState.PICKING, 2, OrderState.PICKED),
     ]
 
 
