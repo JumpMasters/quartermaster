@@ -134,3 +134,37 @@ class PackResult:
     @classmethod
     def decode(cls, data: dict[str, Any]) -> PackResult:
         return cls(order_id=OrderId(UUID(data["order_id"])), state=OrderState(data["state"]))
+
+
+@dataclass(frozen=True)
+class ShippedLine:
+    """How much of one line was shipped."""
+
+    sku_id: SkuId
+    shipped: int
+
+
+@dataclass(frozen=True)
+class ShipResult:
+    """The outcome of a ``ship``: the order is ``shipped`` and what shipped per line."""
+
+    order_id: OrderId
+    state: OrderState
+    lines: tuple[ShippedLine, ...]
+
+    def to_response(self) -> dict[str, Any]:
+        return {
+            "order_id": str(self.order_id),
+            "state": self.state.value,
+            "lines": [{"sku_id": line.sku_id, "shipped": line.shipped} for line in self.lines],
+        }
+
+    @classmethod
+    def decode(cls, data: dict[str, Any]) -> ShipResult:
+        return cls(
+            order_id=OrderId(UUID(data["order_id"])),
+            state=OrderState(data["state"]),
+            lines=tuple(
+                ShippedLine(SkuId(line["sku_id"]), int(line["shipped"])) for line in data["lines"]
+            ),
+        )

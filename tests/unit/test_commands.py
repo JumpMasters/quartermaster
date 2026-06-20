@@ -76,3 +76,12 @@ def test_pack_fingerprint_differs_from_pick() -> None:
         PackCommand(ORDER_A, IdempotencyKey("k")).fingerprint()
         != PickCommand(ORDER_A, IdempotencyKey("k")).fingerprint()
     )
+
+
+def test_ship_fingerprint_differs_from_pack() -> None:
+    from quartermaster.application.commands import PackCommand, ShipCommand
+
+    assert (
+        ShipCommand(ORDER_A, IdempotencyKey("k")).fingerprint()
+        != PackCommand(ORDER_A, IdempotencyKey("k")).fingerprint()
+    )

@@ -107,3 +107,19 @@ def test_pack_result_roundtrip() -> None:
     )
     assert PackResult.decode(result.to_response()) == result
     assert result.to_response()["state"] == "packed"
+
+
+def test_ship_result_roundtrip() -> None:
+    from uuid import UUID
+
+    from quartermaster.application.results import ShippedLine, ShipResult
+    from quartermaster.domain.ids import OrderId, SkuId
+    from quartermaster.domain.state_machines import OrderState
+
+    result = ShipResult(
+        order_id=OrderId(UUID("00000000-0000-7000-8000-000000000001")),
+        state=OrderState.SHIPPED,
+        lines=(ShippedLine(SkuId("A"), 5),),
+    )
+    assert ShipResult.decode(result.to_response()) == result
+    assert result.to_response()["state"] == "shipped"
