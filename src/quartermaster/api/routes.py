@@ -11,12 +11,15 @@ from fastapi import APIRouter, Header, Response, status
 from quartermaster.api.deps import Deps
 from quartermaster.api.errors import MissingIdempotencyKey
 from quartermaster.api.schemas import (
+    AllocateResponse,
+    AllocationLineOut,
     CreatedLineOut,
     CreateOrderRequest,
     CreateOrderResponse,
     OrderLineView,
     OrderResponse,
 )
+from quartermaster.application.handlers.allocate import run_allocate
 from quartermaster.application.handlers.create_order import run_create_order
 from quartermaster.application.queries import load_order
 from quartermaster.domain.errors import OrderNotFound
@@ -75,6 +78,30 @@ def build_router(deps: Deps) -> APIRouter:
             lines=[
                 CreatedLineOut(sku_id=line.sku_id, ordered=line.ordered) for line in result.lines
             ],
+        )
+
+    @router.post("/orders/{order_id}/allocate", response_model=AllocateResponse)
+    async def allocate_route(
+        order_id: UUID,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> AllocateResponse:
+        key = _require_key(idempotency_key)
+        result = await run_allocate(
+            deps.uow_factory,
+            OrderId(order_id),
+            key,
+            now=deps.now,
+            new_reservation_id=deps.new_reservation_id,
+            new_movement_id=deps.new_movement_id,
+        )
+        return AllocateResponse(
+            order_id=result.order_id,
+            state=result.state.value,
+            lines=[
+                AllocationLineOut(sku_id=line.sku_id, allocated=line.allocated)
+                for line in result.lines
+            ],
+            reservation_ids=list(result.reservation_ids),
         )
 
     return router
