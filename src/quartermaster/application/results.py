@@ -11,8 +11,9 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from quartermaster.domain.ids import OrderId, ReservationId, SkuId
-from quartermaster.domain.state_machines import OrderState
+from quartermaster.domain.ids import OrderId, ReceiptId, ReservationId, SkuId
+from quartermaster.domain.receipts import ReceiptKind
+from quartermaster.domain.state_machines import OrderState, ReceiptState
 
 
 @dataclass(frozen=True)
@@ -192,5 +193,95 @@ class CancelResult:
             state=OrderState(data["state"]),
             released_reservation_ids=tuple(
                 ReservationId(UUID(rid)) for rid in data["released_reservation_ids"]
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class CreatedReceiptLine:
+    """One line of a newly created receipt: its expected quantity."""
+
+    sku_id: SkuId
+    expected: int
+
+
+@dataclass(frozen=True)
+class CreateReceiptResult:
+    """The outcome of a ``create_receipt``: the new receipt id, kind, state, lines."""
+
+    receipt_id: ReceiptId
+    kind: ReceiptKind
+    state: ReceiptState
+    lines: tuple[CreatedReceiptLine, ...]
+
+    def to_response(self) -> dict[str, Any]:
+        return {
+            "receipt_id": str(self.receipt_id),
+            "kind": self.kind.value,
+            "state": self.state.value,
+            "lines": [{"sku_id": line.sku_id, "expected": line.expected} for line in self.lines],
+        }
+
+    @classmethod
+    def decode(cls, data: dict[str, Any]) -> CreateReceiptResult:
+        return cls(
+            receipt_id=ReceiptId(UUID(data["receipt_id"])),
+            kind=ReceiptKind(data["kind"]),
+            state=ReceiptState(data["state"]),
+            lines=tuple(
+                CreatedReceiptLine(SkuId(line["sku_id"]), int(line["expected"]))
+                for line in data["lines"]
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class ArriveResult:
+    """The outcome of an ``arrive``: the receipt is ``arrived``."""
+
+    receipt_id: ReceiptId
+    state: ReceiptState
+
+    def to_response(self) -> dict[str, Any]:
+        return {"receipt_id": str(self.receipt_id), "state": self.state.value}
+
+    @classmethod
+    def decode(cls, data: dict[str, Any]) -> ArriveResult:
+        return cls(
+            receipt_id=ReceiptId(UUID(data["receipt_id"])),
+            state=ReceiptState(data["state"]),
+        )
+
+
+@dataclass(frozen=True)
+class ReceivedLine:
+    """How much of one line was received."""
+
+    sku_id: SkuId
+    received: int
+
+
+@dataclass(frozen=True)
+class ReceiveResult:
+    """The outcome of a ``receive``: the receipt is ``received`` and what landed per line."""
+
+    receipt_id: ReceiptId
+    state: ReceiptState
+    lines: tuple[ReceivedLine, ...]
+
+    def to_response(self) -> dict[str, Any]:
+        return {
+            "receipt_id": str(self.receipt_id),
+            "state": self.state.value,
+            "lines": [{"sku_id": line.sku_id, "received": line.received} for line in self.lines],
+        }
+
+    @classmethod
+    def decode(cls, data: dict[str, Any]) -> ReceiveResult:
+        return cls(
+            receipt_id=ReceiptId(UUID(data["receipt_id"])),
+            state=ReceiptState(data["state"]),
+            lines=tuple(
+                ReceivedLine(SkuId(line["sku_id"]), int(line["received"])) for line in data["lines"]
             ),
         )

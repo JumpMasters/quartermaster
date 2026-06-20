@@ -17,11 +17,12 @@ from quartermaster.adapters.postgres.tables import (
     sku,
     stock,
 )
-from quartermaster.adapters.postgres.unit_of_work import PostgresUnitOfWork
+from quartermaster.adapters.postgres.unit_of_work import PostgresUnitOfWork, postgres_uow_factory
 from quartermaster.application.ports import ClaimOutcome
 from quartermaster.domain.idempotency import IdempotencyStatus
 from quartermaster.domain.ids import IdempotencyKey, LocationId, SkuId
 from quartermaster.domain.state_machines import OrderState, ReservationState
+from tests.integration.seed import seed_location, seed_sku
 
 
 async def _seed_two_cells(engine: AsyncEngine, on_hand: int) -> SkuId:
@@ -218,6 +219,32 @@ async def test_held_for_order_filters_and_orders(committed_db: AsyncEngine) -> N
         (LocationId("L1"), 1, "held"),
         (LocationId("L2"), 2, "held"),
     ]
+
+
+async def test_add_on_hand_inserts_then_increments(committed_db: AsyncEngine) -> None:
+    await seed_sku(committed_db, "S")
+    await seed_location(committed_db, "RCV", "receiving")
+    factory = postgres_uow_factory(committed_db)
+    async with factory() as uow:
+        await uow.stock.add_on_hand(SkuId("S"), LocationId("RCV"), 3)
+        await uow.stock.add_on_hand(SkuId("S"), LocationId("RCV"), 2)
+        await uow.commit()
+    async with committed_db.connect() as conn:
+        cell = (
+            await conn.execute(
+                select(stock.c.qty_on_hand, stock.c.qty_reserved).where(stock.c.sku_id == "S")
+            )
+        ).one()
+    assert (cell.qty_on_hand, cell.qty_reserved) == (5, 0)
+
+
+async def test_location_exists(committed_db: AsyncEngine) -> None:
+    await seed_location(committed_db, "RCV", "receiving")
+    factory = postgres_uow_factory(committed_db)
+    async with factory() as uow:
+        assert await uow.catalog.location_exists(LocationId("RCV"))
+        assert not await uow.catalog.location_exists(LocationId("NOPE"))
+        await uow.commit()
 
 
 async def test_release_decrements_only_reserved_guarded(committed_db: AsyncEngine) -> None:
