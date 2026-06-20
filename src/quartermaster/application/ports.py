@@ -8,7 +8,7 @@ are injected at the composition root. Methods are minimal — only what the
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any, Protocol
@@ -73,6 +73,10 @@ class OrderRepo(Protocol):
         """
         ...
 
+    async def insert_order(self, order: Order, lines: Sequence[OrderLine]) -> None:
+        """Insert a new order header and its lines (creation; no guard)."""
+        ...
+
 
 class ReservationRepo(Protocol):
     async def add(self, reservation: Reservation) -> None: ...
@@ -80,6 +84,12 @@ class ReservationRepo(Protocol):
 
 class MovementRepo(Protocol):
     async def append(self, movement: Movement) -> None: ...
+
+
+class CatalogRepo(Protocol):
+    async def missing_skus(self, skus: set[SkuId]) -> set[SkuId]:
+        """Return the subset of ``skus`` that do not exist in the catalog."""
+        ...
 
 
 class IdempotencyRepo(Protocol):
@@ -98,6 +108,7 @@ class UnitOfWork(Protocol):
     reservations: ReservationRepo
     movements: MovementRepo
     idempotency: IdempotencyRepo
+    catalog: CatalogRepo
 
     async def __aenter__(self) -> UnitOfWork: ...
     async def __aexit__(self, *exc: object) -> None: ...
