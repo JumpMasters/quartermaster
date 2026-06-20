@@ -78,6 +78,11 @@ class PickResponse(BaseModel):
     lines: list[PickedLineOut]
 
 
+class PackResponse(BaseModel):
+    order_id: UUID
+    state: str
+
+
 class ErrorResponse(BaseModel):
     error: str
     detail: str

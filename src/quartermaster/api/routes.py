@@ -18,11 +18,13 @@ from quartermaster.api.schemas import (
     CreateOrderResponse,
     OrderLineView,
     OrderResponse,
+    PackResponse,
     PickedLineOut,
     PickResponse,
 )
 from quartermaster.application.handlers.allocate import run_allocate
 from quartermaster.application.handlers.create_order import run_create_order
+from quartermaster.application.handlers.pack import run_pack
 from quartermaster.application.handlers.pick import run_pick
 from quartermaster.application.queries import load_order
 from quartermaster.domain.errors import OrderNotFound
@@ -125,5 +127,14 @@ def build_router(deps: Deps) -> APIRouter:
             state=result.state.value,
             lines=[PickedLineOut(sku_id=line.sku_id, picked=line.picked) for line in result.lines],
         )
+
+    @router.post("/orders/{order_id}/pack", response_model=PackResponse)
+    async def pack_route(
+        order_id: UUID,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> PackResponse:
+        key = _require_key(idempotency_key)
+        result = await run_pack(deps.uow_factory, OrderId(order_id), key)
+        return PackResponse(order_id=result.order_id, state=result.state.value)
 
     return router
