@@ -184,16 +184,24 @@ class PgOrderRepo:
                 created_at=order.created_at,
             )
         )
-        for line in lines:
+        if lines:
+            # A single multi-row INSERT (executemany form) instead of one
+            # round-trip per line. Pass a list of dicts as params alongside
+            # the bare insert() construct -- table.insert().values(list)
+            # does not use executemany with asyncpg, this form does.
             await self._conn.execute(
-                order_line.insert().values(
-                    order_id=line.order_id,
-                    sku_id=line.sku_id,
-                    ordered_qty=line.ordered,
-                    allocated_qty=line.allocated,
-                    picked_qty=line.picked,
-                    shipped_qty=line.shipped,
-                )
+                order_line.insert(),
+                [
+                    {
+                        "order_id": line.order_id,
+                        "sku_id": line.sku_id,
+                        "ordered_qty": line.ordered,
+                        "allocated_qty": line.allocated,
+                        "picked_qty": line.picked,
+                        "shipped_qty": line.shipped,
+                    }
+                    for line in lines
+                ],
             )
 
 

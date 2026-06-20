@@ -21,6 +21,7 @@ from quartermaster.adapters.postgres.unit_of_work import PostgresUnitOfWork
 from quartermaster.application.ports import ClaimOutcome
 from quartermaster.domain.idempotency import IdempotencyStatus
 from quartermaster.domain.ids import IdempotencyKey, LocationId, SkuId
+from quartermaster.domain.orders import Order, OrderLine
 from quartermaster.domain.state_machines import OrderState, ReservationState
 
 
@@ -256,3 +257,69 @@ async def test_transition_is_a_state_cas(committed_db: AsyncEngine) -> None:
             is False
         )
         await uow.commit()
+
+
+async def test_insert_order_persists_all_lines(committed_db: AsyncEngine) -> None:
+    """insert_order batches the line inserts; verify every line actually lands."""
+    await _seed_two_cells(committed_db, on_hand=10)
+    order_id = new_order_id()
+    order = Order(
+        order_id=order_id,
+        state=OrderState.CREATED,
+        version=1,
+        created_at=datetime.now(UTC),
+    )
+    lines = [
+        OrderLine(
+            order_id=order_id,
+            sku_id=SkuId("S"),
+            ordered=3,
+            allocated=0,
+            picked=0,
+            shipped=0,
+        ),
+    ]
+    async with PostgresUnitOfWork(committed_db) as uow:
+        await uow.orders.insert_order(order, lines)
+        await uow.commit()
+    async with committed_db.connect() as conn:
+        order_rows = (
+            await conn.execute(select(orders.c.order_id).where(orders.c.order_id == order_id))
+        ).all()
+        line_rows = (
+            await conn.execute(
+                select(order_line.c.sku_id, order_line.c.ordered_qty).where(
+                    order_line.c.order_id == order_id
+                )
+            )
+        ).all()
+    assert len(order_rows) == 1
+    assert len(line_rows) == 1
+    assert line_rows[0].sku_id == "S"
+    assert line_rows[0].ordered_qty == 3
+
+
+async def test_insert_order_with_no_lines(committed_db: AsyncEngine) -> None:
+    """insert_order with an empty lines sequence still inserts the order row only."""
+    order_id = new_order_id()
+    order = Order(
+        order_id=order_id,
+        state=OrderState.CREATED,
+        version=1,
+        created_at=datetime.now(UTC),
+    )
+    async with PostgresUnitOfWork(committed_db) as uow:
+        await uow.orders.insert_order(order, [])
+        await uow.commit()
+    async with committed_db.connect() as conn:
+        order_rows = (
+            await conn.execute(select(orders.c.order_id).where(orders.c.order_id == order_id))
+        ).all()
+        line_rows = (
+            await conn.execute(
+                select(order_line.c.order_id).where(order_line.c.order_id == order_id)
+            )
+        ).all()
+    assert len(order_rows) == 1
+    assert len(line_rows) == 0
+
