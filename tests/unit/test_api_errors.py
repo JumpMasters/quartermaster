@@ -27,6 +27,7 @@ from quartermaster.application.ports import (
     IdempotencyRepo,
     MovementRepo,
     OrderRepo,
+    ReceiptRepo,
     ReservationRepo,
     StockRepo,
     StoredResponse,
@@ -39,13 +40,15 @@ from quartermaster.domain.ids import (
     LocationId,
     MovementId,
     OrderId,
+    ReceiptId,
     ReservationId,
     SkuId,
 )
 from quartermaster.domain.movements import Movement
 from quartermaster.domain.orders import Order, OrderLine
+from quartermaster.domain.receipts import Receipt, ReceiptLine
 from quartermaster.domain.reservations import Reservation
-from quartermaster.domain.state_machines import OrderState, ReservationState
+from quartermaster.domain.state_machines import OrderState, ReceiptState, ReservationState
 
 _OID = OrderId(UUID("00000000-0000-7000-8000-000000000001"))
 _RID = ReservationId(UUID("00000000-0000-7000-8000-000000000002"))
@@ -72,6 +75,11 @@ class _NoopStockRepo:
 
     async def release(self, sku: SkuId, location: LocationId, qty: int) -> bool:  # pragma: no cover
         return True
+
+    async def add_on_hand(
+        self, sku: SkuId, location: LocationId, qty: int
+    ) -> None:  # pragma: no cover
+        pass
 
 
 class _BoomOrderRepo:
@@ -134,9 +142,39 @@ class _NoopMovementRepo:
         pass
 
 
+class _NoopReceiptRepo:
+    async def get(self, receipt_id: ReceiptId) -> Receipt | None:  # pragma: no cover
+        return None
+
+    async def get_lines(self, receipt_id: ReceiptId) -> list[ReceiptLine]:  # pragma: no cover
+        return []
+
+    async def insert_receipt(
+        self, receipt: Receipt, lines: Sequence[ReceiptLine]
+    ) -> None:  # pragma: no cover
+        pass
+
+    async def cas_state(
+        self,
+        receipt_id: ReceiptId,
+        expected_state: ReceiptState,
+        expected_version: int,
+        new_state: ReceiptState,
+    ) -> bool:  # pragma: no cover
+        return True
+
+    async def add_received(
+        self, receipt_id: ReceiptId, sku_id: SkuId, qty: int
+    ) -> bool:  # pragma: no cover
+        return True
+
+
 class _NoopCatalogRepo:
     async def missing_skus(self, skus: set[SkuId]) -> set[SkuId]:  # pragma: no cover
         return set()
+
+    async def location_exists(self, location: LocationId) -> bool:  # pragma: no cover
+        return True
 
 
 class _NoopIdempotencyRepo:
@@ -168,6 +206,7 @@ class _BoomUnitOfWork:
     def __init__(self) -> None:
         self.stock: StockRepo = _NoopStockRepo()
         self.orders: OrderRepo = _BoomOrderRepo()
+        self.receipts: ReceiptRepo = _NoopReceiptRepo()
         self.reservations: ReservationRepo = _NoopReservationRepo()
         self.movements: MovementRepo = _NoopMovementRepo()
         self.idempotency: IdempotencyRepo = _NoopIdempotencyRepo()
