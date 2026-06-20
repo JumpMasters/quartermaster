@@ -335,8 +335,14 @@ async def test_transition_is_a_state_cas(committed_db: AsyncEngine) -> None:
 
 
 async def test_insert_order_persists_all_lines(committed_db: AsyncEngine) -> None:
-    """insert_order batches the line inserts; verify every line actually lands."""
+    """insert_order batches the line inserts; verify every line lands with its own values.
+
+    Uses two distinct SKUs so the batch must land both rows, each carrying its own
+    quantity -- the multi-row case the batched insert exists for.
+    """
     await _seed_two_cells(committed_db, on_hand=10)
+    async with committed_db.begin() as conn:
+        await conn.execute(sku.insert().values(sku_id="T", description="w", unit="each"))
     order_id = new_order_id()
     order = Order(
         order_id=order_id,
@@ -346,28 +352,29 @@ async def test_insert_order_persists_all_lines(committed_db: AsyncEngine) -> Non
     )
     lines = [
         OrderLine(
-            order_id=order_id,
-            sku_id=SkuId("S"),
-            ordered=3,
-            allocated=0,
-            picked=0,
-            shipped=0,
+            order_id=order_id, sku_id=SkuId("S"), ordered=3, allocated=0, picked=0, shipped=0
+        ),
+        OrderLine(
+            order_id=order_id, sku_id=SkuId("T"), ordered=7, allocated=0, picked=0, shipped=0
         ),
     ]
     async with PostgresUnitOfWork(committed_db) as uow:
         await uow.orders.insert_order(order, lines)
         await uow.commit()
     async with committed_db.connect() as conn:
-        order_query = select(orders.c.order_id).where(orders.c.order_id == order_id)
-        order_rows = (await conn.execute(order_query)).all()
-        line_query = select(order_line.c.sku_id, order_line.c.ordered_qty).where(
-            order_line.c.order_id == order_id
-        )
-        line_rows = (await conn.execute(line_query)).all()
+        order_rows = (
+            await conn.execute(select(orders.c.order_id).where(orders.c.order_id == order_id))
+        ).all()
+        line_rows = (
+            await conn.execute(
+                select(order_line.c.sku_id, order_line.c.ordered_qty).where(
+                    order_line.c.order_id == order_id
+                )
+            )
+        ).all()
     assert len(order_rows) == 1
-    assert len(line_rows) == 1
-    assert line_rows[0].sku_id == "S"
-    assert line_rows[0].ordered_qty == 3
+    # every line in the batch landed, each with its own quantity (no drops, no cross-talk)
+    assert {row.sku_id: row.ordered_qty for row in line_rows} == {"S": 3, "T": 7}
 
 
 async def test_insert_order_with_no_lines(committed_db: AsyncEngine) -> None:
