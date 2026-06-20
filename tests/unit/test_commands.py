@@ -85,3 +85,12 @@ def test_ship_fingerprint_differs_from_pack() -> None:
         ShipCommand(ORDER_A, IdempotencyKey("k")).fingerprint()
         != PackCommand(ORDER_A, IdempotencyKey("k")).fingerprint()
     )
+
+
+def test_cancel_fingerprint_differs_from_ship() -> None:
+    from quartermaster.application.commands import CancelCommand, ShipCommand
+
+    assert (
+        CancelCommand(ORDER_A, IdempotencyKey("k")).fingerprint()
+        != ShipCommand(ORDER_A, IdempotencyKey("k")).fingerprint()
+    )

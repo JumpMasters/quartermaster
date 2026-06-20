@@ -168,3 +168,29 @@ class ShipResult:
                 ShippedLine(SkuId(line["sku_id"]), int(line["shipped"])) for line in data["lines"]
             ),
         )
+
+
+@dataclass(frozen=True)
+class CancelResult:
+    """The outcome of a ``cancel``: the order is ``cancelled`` and which reservations released."""
+
+    order_id: OrderId
+    state: OrderState
+    released_reservation_ids: tuple[ReservationId, ...]
+
+    def to_response(self) -> dict[str, Any]:
+        return {
+            "order_id": str(self.order_id),
+            "state": self.state.value,
+            "released_reservation_ids": [str(rid) for rid in self.released_reservation_ids],
+        }
+
+    @classmethod
+    def decode(cls, data: dict[str, Any]) -> CancelResult:
+        return cls(
+            order_id=OrderId(UUID(data["order_id"])),
+            state=OrderState(data["state"]),
+            released_reservation_ids=tuple(
+                ReservationId(UUID(rid)) for rid in data["released_reservation_ids"]
+            ),
+        )

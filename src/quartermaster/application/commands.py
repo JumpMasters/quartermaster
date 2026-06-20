@@ -77,3 +77,14 @@ class ShipCommand:
 
     def fingerprint(self) -> str:
         return _fingerprint({"command": "ship", "order_id": str(self.order_id)})
+
+
+@dataclass(frozen=True)
+class CancelCommand:
+    """Cancel a pre-pick order, releasing its held reservations."""
+
+    order_id: OrderId
+    key: IdempotencyKey
+
+    def fingerprint(self) -> str:
+        return _fingerprint({"command": "cancel", "order_id": str(self.order_id)})

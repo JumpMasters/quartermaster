@@ -123,3 +123,19 @@ def test_ship_result_roundtrip() -> None:
     )
     assert ShipResult.decode(result.to_response()) == result
     assert result.to_response()["state"] == "shipped"
+
+
+def test_cancel_result_roundtrip() -> None:
+    from uuid import UUID
+
+    from quartermaster.application.results import CancelResult
+    from quartermaster.domain.ids import OrderId, ReservationId
+    from quartermaster.domain.state_machines import OrderState
+
+    result = CancelResult(
+        order_id=OrderId(UUID("00000000-0000-7000-8000-000000000001")),
+        state=OrderState.CANCELLED,
+        released_reservation_ids=(ReservationId(UUID("00000000-0000-7000-8000-0000000000aa")),),
+    )
+    assert CancelResult.decode(result.to_response()) == result
+    assert result.to_response()["state"] == "cancelled"
