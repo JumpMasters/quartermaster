@@ -94,6 +94,12 @@ class ShipResponse(BaseModel):
     lines: list[ShippedLineOut]
 
 
+class CancelResponse(BaseModel):
+    order_id: UUID
+    state: str
+    released_reservation_ids: list[UUID]
+
+
 class ErrorResponse(BaseModel):
     error: str
     detail: str

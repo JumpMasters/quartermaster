@@ -13,6 +13,7 @@ from quartermaster.api.errors import MissingIdempotencyKey
 from quartermaster.api.schemas import (
     AllocateResponse,
     AllocationLineOut,
+    CancelResponse,
     CreatedLineOut,
     CreateOrderRequest,
     CreateOrderResponse,
@@ -25,6 +26,7 @@ from quartermaster.api.schemas import (
     ShipResponse,
 )
 from quartermaster.application.handlers.allocate import run_allocate
+from quartermaster.application.handlers.cancel import run_cancel
 from quartermaster.application.handlers.create_order import run_create_order
 from quartermaster.application.handlers.pack import run_pack
 from quartermaster.application.handlers.pick import run_pick
@@ -153,6 +155,25 @@ def build_router(deps: Deps) -> APIRouter:
             lines=[
                 ShippedLineOut(sku_id=line.sku_id, shipped=line.shipped) for line in result.lines
             ],
+        )
+
+    @router.post("/orders/{order_id}/cancel", response_model=CancelResponse)
+    async def cancel_route(
+        order_id: UUID,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> CancelResponse:
+        key = _require_key(idempotency_key)
+        result = await run_cancel(
+            deps.uow_factory,
+            OrderId(order_id),
+            key,
+            now=deps.now,
+            new_movement_id=deps.new_movement_id,
+        )
+        return CancelResponse(
+            order_id=result.order_id,
+            state=result.state.value,
+            released_reservation_ids=list(result.released_reservation_ids),
         )
 
     return router
