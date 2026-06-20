@@ -8,9 +8,11 @@ suite.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from quartermaster.application.ports import (
+    CatalogRepo,
     ClaimOutcome,
     IdempotencyRepo,
     MovementRepo,
@@ -67,6 +69,7 @@ class FakeOrderRepo:
         self.add_allocated_result = add_allocated_result
         self.cas_calls: list[tuple[OrderId, OrderState, int, OrderState]] = []
         self.allocated: list[tuple[OrderId, SkuId, int]] = []
+        self.inserted: list[tuple[Order, list[OrderLine]]] = []
 
     async def get(self, order_id: OrderId) -> Order | None:
         return self.order
@@ -84,9 +87,12 @@ class FakeOrderRepo:
         self.cas_calls.append((order_id, expected_state, expected_version, new_state))
         return self.cas_result
 
-    async def add_allocated(self, order_id: OrderId, sku: SkuId, qty: int) -> bool:
-        self.allocated.append((order_id, sku, qty))
+    async def add_allocated(self, order_id: OrderId, sku_id: SkuId, qty: int) -> bool:
+        self.allocated.append((order_id, sku_id, qty))
         return self.add_allocated_result
+
+    async def insert_order(self, order: Order, lines: Sequence[OrderLine]) -> None:
+        self.inserted.append((order, list(lines)))
 
 
 class FakeReservationRepo:
@@ -103,6 +109,14 @@ class FakeMovementRepo:
 
     async def append(self, movement: Movement) -> None:
         self.appended.append(movement)
+
+
+class FakeCatalogRepo:
+    def __init__(self, known: set[SkuId] | None = None) -> None:
+        self.known = known if known is not None else set()
+
+    async def missing_skus(self, skus: set[SkuId]) -> set[SkuId]:
+        return skus - self.known
 
 
 class FakeIdempotencyRepo:
@@ -141,12 +155,14 @@ class FakeUnitOfWork:
         reservations: FakeReservationRepo | None = None,
         movements: FakeMovementRepo | None = None,
         idempotency: FakeIdempotencyRepo | None = None,
+        catalog: FakeCatalogRepo | None = None,
     ) -> None:
         self.stock: StockRepo = stock or FakeStockRepo()
         self.orders: OrderRepo = orders or FakeOrderRepo()
         self.reservations: ReservationRepo = reservations or FakeReservationRepo()
         self.movements: MovementRepo = movements or FakeMovementRepo()
         self.idempotency: IdempotencyRepo = idempotency or FakeIdempotencyRepo()
+        self.catalog: CatalogRepo = catalog or FakeCatalogRepo()
         self.commits = 0
         self.rollbacks = 0
         self.enters = 0

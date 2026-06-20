@@ -2,13 +2,13 @@
 
 A :class:`UnitOfWork` owns exactly one transaction and exposes the repos bound
 to it. ``application`` declares these contracts; ``adapters`` implement them and
-are injected at the composition root. Methods are minimal — only what the
-``allocate`` command needs; each repo grows with future commands.
+are injected at the composition root. Methods are minimal — only what the commands in play need;
+each repo grows as new commands arrive.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any, Protocol
@@ -65,12 +65,16 @@ class OrderRepo(Protocol):
         """CAS the order header; bump version. False == 0 rows == conflict."""
         ...
 
-    async def add_allocated(self, order_id: OrderId, sku: SkuId, qty: int) -> bool:
+    async def add_allocated(self, order_id: OrderId, sku_id: SkuId, qty: int) -> bool:
         """Increment allocated_qty by qty only if the result would not exceed ordered_qty.
 
         Returns True if the row was updated, False if the guard rejected the write
         (allocated_qty + qty > ordered_qty).  A False return is an OCC conflict signal.
         """
+        ...
+
+    async def insert_order(self, order: Order, lines: Sequence[OrderLine]) -> None:
+        """Insert a new order header and its lines (creation; no guard)."""
         ...
 
 
@@ -80,6 +84,12 @@ class ReservationRepo(Protocol):
 
 class MovementRepo(Protocol):
     async def append(self, movement: Movement) -> None: ...
+
+
+class CatalogRepo(Protocol):
+    async def missing_skus(self, skus: set[SkuId]) -> set[SkuId]:
+        """Return the subset of ``skus`` that do not exist in the catalog."""
+        ...
 
 
 class IdempotencyRepo(Protocol):
@@ -98,6 +108,7 @@ class UnitOfWork(Protocol):
     reservations: ReservationRepo
     movements: MovementRepo
     idempotency: IdempotencyRepo
+    catalog: CatalogRepo
 
     async def __aenter__(self) -> UnitOfWork: ...
     async def __aexit__(self, *exc: object) -> None: ...

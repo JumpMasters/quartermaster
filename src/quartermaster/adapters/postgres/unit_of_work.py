@@ -5,6 +5,7 @@ guard under READ COMMITTED (design spec §5, §8); the ORM is deliberately unuse
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import select, text
@@ -16,9 +17,11 @@ from quartermaster.adapters.postgres.tables import (
     order_line,
     orders,
     reservation,
+    sku,
     stock,
 )
 from quartermaster.application.ports import (
+    CatalogRepo,
     ClaimOutcome,
     IdempotencyRepo,
     MovementRepo,
@@ -132,17 +135,50 @@ class PgOrderRepo:
         )
         return result.rowcount == 1
 
-    async def add_allocated(self, order_id: OrderId, sku: SkuId, qty: int) -> bool:
+    async def add_allocated(self, order_id: OrderId, sku_id: SkuId, qty: int) -> bool:
         result = await self._conn.execute(
             order_line.update()
             .where(
                 order_line.c.order_id == order_id,
-                order_line.c.sku_id == sku,
+                order_line.c.sku_id == sku_id,
                 order_line.c.allocated_qty + qty <= order_line.c.ordered_qty,
             )
             .values(allocated_qty=order_line.c.allocated_qty + qty)
         )
         return result.rowcount == 1
+
+    async def insert_order(self, order: Order, lines: Sequence[OrderLine]) -> None:
+        await self._conn.execute(
+            orders.insert().values(
+                order_id=order.order_id,
+                state=order.state.value,
+                version=order.version,
+                created_at=order.created_at,
+            )
+        )
+        for line in lines:
+            await self._conn.execute(
+                order_line.insert().values(
+                    order_id=line.order_id,
+                    sku_id=line.sku_id,
+                    ordered_qty=line.ordered,
+                    allocated_qty=line.allocated,
+                    picked_qty=line.picked,
+                    shipped_qty=line.shipped,
+                )
+            )
+
+
+class PgCatalogRepo:
+    def __init__(self, conn: AsyncConnection) -> None:
+        self._conn = conn
+
+    async def missing_skus(self, skus: set[SkuId]) -> set[SkuId]:
+        if not skus:
+            return set()
+        rows = await self._conn.execute(select(sku.c.sku_id).where(sku.c.sku_id.in_(list(skus))))
+        found = {SkuId(r.sku_id) for r in rows}
+        return skus - found
 
 
 class PgReservationRepo:
@@ -239,6 +275,7 @@ class PostgresUnitOfWork:
     reservations: ReservationRepo
     movements: MovementRepo
     idempotency: IdempotencyRepo
+    catalog: CatalogRepo
 
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
@@ -252,6 +289,7 @@ class PostgresUnitOfWork:
         self.reservations = PgReservationRepo(self._conn)
         self.movements = PgMovementRepo(self._conn)
         self.idempotency = PgIdempotencyRepo(self._conn)
+        self.catalog = PgCatalogRepo(self._conn)
         return self
 
     async def __aexit__(self, *exc: object) -> None:
