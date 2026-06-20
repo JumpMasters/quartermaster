@@ -58,3 +58,21 @@ def test_pick_fingerprint_differs_from_allocate() -> None:
         PickCommand(ORDER_A, IdempotencyKey("k")).fingerprint()
         != AllocateCommand(ORDER_A, IdempotencyKey("k")).fingerprint()
     )
+
+
+def test_pack_fingerprint_is_stable_across_keys() -> None:
+    from quartermaster.application.commands import PackCommand
+
+    assert (
+        PackCommand(ORDER_A, IdempotencyKey("k1")).fingerprint()
+        == PackCommand(ORDER_A, IdempotencyKey("k2")).fingerprint()
+    )
+
+
+def test_pack_fingerprint_differs_from_pick() -> None:
+    from quartermaster.application.commands import PackCommand, PickCommand
+
+    assert (
+        PackCommand(ORDER_A, IdempotencyKey("k")).fingerprint()
+        != PickCommand(ORDER_A, IdempotencyKey("k")).fingerprint()
+    )

@@ -92,3 +92,18 @@ def test_pick_result_response_is_json_safe() -> None:
     encoded = result.to_response()
     assert json.loads(json.dumps(encoded)) == encoded
     assert encoded["state"] == "picked"
+
+
+def test_pack_result_roundtrip() -> None:
+    from uuid import UUID
+
+    from quartermaster.application.results import PackResult
+    from quartermaster.domain.ids import OrderId
+    from quartermaster.domain.state_machines import OrderState
+
+    result = PackResult(
+        order_id=OrderId(UUID("00000000-0000-7000-8000-000000000001")),
+        state=OrderState.PACKED,
+    )
+    assert PackResult.decode(result.to_response()) == result
+    assert result.to_response()["state"] == "packed"

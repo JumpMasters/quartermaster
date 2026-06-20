@@ -119,3 +119,18 @@ class PickResult:
                 PickedLine(SkuId(line["sku_id"]), int(line["picked"])) for line in data["lines"]
             ),
         )
+
+
+@dataclass(frozen=True)
+class PackResult:
+    """The outcome of a ``pack``: the order is ``packed``."""
+
+    order_id: OrderId
+    state: OrderState
+
+    def to_response(self) -> dict[str, Any]:
+        return {"order_id": str(self.order_id), "state": self.state.value}
+
+    @classmethod
+    def decode(cls, data: dict[str, Any]) -> PackResult:
+        return cls(order_id=OrderId(UUID(data["order_id"])), state=OrderState(data["state"]))

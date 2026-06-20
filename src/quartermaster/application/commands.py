@@ -55,3 +55,14 @@ class PickCommand:
 
     def fingerprint(self) -> str:
         return _fingerprint({"command": "pick", "order_id": str(self.order_id)})
+
+
+@dataclass(frozen=True)
+class PackCommand:
+    """Advance a picked order to ``packed``."""
+
+    order_id: OrderId
+    key: IdempotencyKey
+
+    def fingerprint(self) -> str:
+        return _fingerprint({"command": "pack", "order_id": str(self.order_id)})
