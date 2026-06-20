@@ -283,16 +283,12 @@ async def test_insert_order_persists_all_lines(committed_db: AsyncEngine) -> Non
         await uow.orders.insert_order(order, lines)
         await uow.commit()
     async with committed_db.connect() as conn:
-        order_rows = (
-            await conn.execute(select(orders.c.order_id).where(orders.c.order_id == order_id))
-        ).all()
-        line_rows = (
-            await conn.execute(
-                select(order_line.c.sku_id, order_line.c.ordered_qty).where(
-                    order_line.c.order_id == order_id
-                )
-            )
-        ).all()
+        order_query = select(orders.c.order_id).where(orders.c.order_id == order_id)
+        order_rows = (await conn.execute(order_query)).all()
+        line_query = select(order_line.c.sku_id, order_line.c.ordered_qty).where(
+            order_line.c.order_id == order_id
+        )
+        line_rows = (await conn.execute(line_query)).all()
     assert len(order_rows) == 1
     assert len(line_rows) == 1
     assert line_rows[0].sku_id == "S"
@@ -312,14 +308,9 @@ async def test_insert_order_with_no_lines(committed_db: AsyncEngine) -> None:
         await uow.orders.insert_order(order, [])
         await uow.commit()
     async with committed_db.connect() as conn:
-        order_rows = (
-            await conn.execute(select(orders.c.order_id).where(orders.c.order_id == order_id))
-        ).all()
-        line_rows = (
-            await conn.execute(
-                select(order_line.c.order_id).where(order_line.c.order_id == order_id)
-            )
-        ).all()
+        order_query = select(orders.c.order_id).where(orders.c.order_id == order_id)
+        order_rows = (await conn.execute(order_query)).all()
+        line_query = select(order_line.c.order_id).where(order_line.c.order_id == order_id)
+        line_rows = (await conn.execute(line_query)).all()
     assert len(order_rows) == 1
     assert len(line_rows) == 0
-
