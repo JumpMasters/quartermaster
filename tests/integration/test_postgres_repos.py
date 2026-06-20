@@ -166,15 +166,20 @@ async def test_held_for_order_filters_and_orders(committed_db: AsyncEngine) -> N
         await conn.execute(location.insert().values(location_id="L1", kind="shelf"))
         await conn.execute(location.insert().values(location_id="L2", kind="shelf"))
         await conn.execute(
+            stock.insert().values(sku_id="S", location_id="L1", qty_on_hand=3, qty_reserved=1)
+        )
+        await conn.execute(
+            stock.insert().values(sku_id="S", location_id="L2", qty_on_hand=3, qty_reserved=2)
+        )
+        await conn.execute(
             orders.insert().values(
                 order_id=order_id, state="allocated", version=2, created_at=datetime.now(UTC)
             )
         )
-        held = new_reservation_id()
-        released = new_reservation_id()
+        # two held reservations at different locations + one released (must be filtered out)
         await conn.execute(
             reservation.insert().values(
-                reservation_id=held,
+                reservation_id=new_reservation_id(),
                 order_id=order_id,
                 sku_id="S",
                 location_id="L2",
@@ -185,7 +190,18 @@ async def test_held_for_order_filters_and_orders(committed_db: AsyncEngine) -> N
         )
         await conn.execute(
             reservation.insert().values(
-                reservation_id=released,
+                reservation_id=new_reservation_id(),
+                order_id=order_id,
+                sku_id="S",
+                location_id="L1",
+                qty=1,
+                state="held",
+                expires_at=datetime.now(UTC),
+            )
+        )
+        await conn.execute(
+            reservation.insert().values(
+                reservation_id=new_reservation_id(),
                 order_id=order_id,
                 sku_id="S",
                 location_id="L1",
@@ -197,7 +213,11 @@ async def test_held_for_order_filters_and_orders(committed_db: AsyncEngine) -> N
     async with PostgresUnitOfWork(committed_db) as uow:
         rows = await uow.reservations.held_for_order(order_id)
         await uow.commit()
-    assert [(r.location_id, r.qty, r.state.value) for r in rows] == [(LocationId("L2"), 2, "held")]
+    # held only, ordered by (sku_id, location_id): L1 before L2; released excluded
+    assert [(r.location_id, r.qty, r.state.value) for r in rows] == [
+        (LocationId("L1"), 1, "held"),
+        (LocationId("L2"), 2, "held"),
+    ]
 
 
 async def test_transition_is_a_state_cas(committed_db: AsyncEngine) -> None:
@@ -210,6 +230,9 @@ async def test_transition_is_a_state_cas(committed_db: AsyncEngine) -> None:
             orders.insert().values(
                 order_id=order_id, state="allocated", version=2, created_at=datetime.now(UTC)
             )
+        )
+        await conn.execute(
+            stock.insert().values(sku_id="S", location_id="L1", qty_on_hand=1, qty_reserved=1)
         )
         await conn.execute(
             reservation.insert().values(
