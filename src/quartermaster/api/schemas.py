@@ -175,3 +175,29 @@ class ReceiptResponse(BaseModel):
     state: str
     version: int
     lines: list[ReceiptLineView]
+
+
+class PutawayRequest(BaseModel):
+    from_location: str = Field(min_length=1)
+    to_location: str = Field(min_length=1)
+
+
+class PutawayLineOut(BaseModel):
+    sku_id: str
+    moved: int
+
+
+class PutawayResponse(BaseModel):
+    receipt_id: UUID
+    state: str
+    lines: list[PutawayLineOut]
+
+
+class CloseReceiptResponse(BaseModel):
+    receipt_id: UUID
+    state: str
+
+
+class CancelReceiptResponse(BaseModel):
+    receipt_id: UUID
+    state: str

@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from quartermaster.api.schemas import (
     CreateOrderRequest,
     CreateReceiptRequest,
+    PutawayRequest,
     ReceiptLineInput,
     ReceiveRequest,
 )
@@ -58,3 +59,15 @@ def test_receipt_line_input_rejects_nonpositive_qty() -> None:
 def test_receive_request_requires_location() -> None:
     with pytest.raises(ValidationError):
         ReceiveRequest(location_id="", lines=[ReceiptLineInput(sku_id="A", qty=1)])
+
+
+def test_putaway_request_valid() -> None:
+    req = PutawayRequest(from_location="RCV", to_location="A1")
+    assert (req.from_location, req.to_location) == ("RCV", "A1")
+
+
+def test_putaway_request_rejects_blank_locations() -> None:
+    with pytest.raises(ValidationError):
+        PutawayRequest(from_location="RCV", to_location="")
+    with pytest.raises(ValidationError):
+        PutawayRequest(from_location="", to_location="A1")
