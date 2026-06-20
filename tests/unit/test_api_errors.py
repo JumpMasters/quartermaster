@@ -82,6 +82,11 @@ class _NoopStockRepo:
     ) -> None:  # pragma: no cover
         pass
 
+    async def remove_on_hand(
+        self, sku: SkuId, location: LocationId, qty: int
+    ) -> bool:  # pragma: no cover
+        return True
+
 
 class _BoomOrderRepo:
     """An OrderRepo stub whose every method raises an unmapped RuntimeError."""
