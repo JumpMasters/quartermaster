@@ -175,3 +175,37 @@ class ReceiptResponse(BaseModel):
     state: str
     version: int
     lines: list[ReceiptLineView]
+
+
+class PutawayRequest(BaseModel):
+    from_location: str = Field(
+        min_length=1, description="The receiving cell the stock is moving from."
+    )
+    to_location: str = Field(
+        min_length=1,
+        description=(
+            "Destination cell. Should be a shelf (pickable) location: allocation only "
+            "reserves from shelves, so stock put away to a non-shelf cell is not allocatable."
+        ),
+    )
+
+
+class PutawayLineOut(BaseModel):
+    sku_id: str
+    moved: int
+
+
+class PutawayResponse(BaseModel):
+    receipt_id: UUID
+    state: str
+    lines: list[PutawayLineOut]
+
+
+class CloseReceiptResponse(BaseModel):
+    receipt_id: UUID
+    state: str
+
+
+class CancelReceiptResponse(BaseModel):
+    receipt_id: UUID
+    state: str

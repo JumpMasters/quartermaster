@@ -285,3 +285,71 @@ class ReceiveResult:
                 ReceivedLine(SkuId(line["sku_id"]), int(line["received"])) for line in data["lines"]
             ),
         )
+
+
+@dataclass(frozen=True)
+class PutawayLine:
+    """How much of one line was put away (relocated to the shelf)."""
+
+    sku_id: SkuId
+    moved: int
+
+
+@dataclass(frozen=True)
+class PutawayResult:
+    """The outcome of a ``putaway``: the receipt is ``putaway_complete`` and what moved."""
+
+    receipt_id: ReceiptId
+    state: ReceiptState
+    lines: tuple[PutawayLine, ...]
+
+    def to_response(self) -> dict[str, Any]:
+        return {
+            "receipt_id": str(self.receipt_id),
+            "state": self.state.value,
+            "lines": [{"sku_id": line.sku_id, "moved": line.moved} for line in self.lines],
+        }
+
+    @classmethod
+    def decode(cls, data: dict[str, Any]) -> PutawayResult:
+        return cls(
+            receipt_id=ReceiptId(UUID(data["receipt_id"])),
+            state=ReceiptState(data["state"]),
+            lines=tuple(
+                PutawayLine(SkuId(line["sku_id"]), int(line["moved"])) for line in data["lines"]
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class CloseReceiptResult:
+    """The outcome of a ``close``: the receipt is ``closed``."""
+
+    receipt_id: ReceiptId
+    state: ReceiptState
+
+    def to_response(self) -> dict[str, Any]:
+        return {"receipt_id": str(self.receipt_id), "state": self.state.value}
+
+    @classmethod
+    def decode(cls, data: dict[str, Any]) -> CloseReceiptResult:
+        return cls(
+            receipt_id=ReceiptId(UUID(data["receipt_id"])), state=ReceiptState(data["state"])
+        )
+
+
+@dataclass(frozen=True)
+class CancelReceiptResult:
+    """The outcome of a ``cancel``: the receipt is ``cancelled``."""
+
+    receipt_id: ReceiptId
+    state: ReceiptState
+
+    def to_response(self) -> dict[str, Any]:
+        return {"receipt_id": str(self.receipt_id), "state": self.state.value}
+
+    @classmethod
+    def decode(cls, data: dict[str, Any]) -> CancelReceiptResult:
+        return cls(
+            receipt_id=ReceiptId(UUID(data["receipt_id"])), state=ReceiptState(data["state"])
+        )

@@ -377,6 +377,43 @@ async def test_insert_order_persists_all_lines(committed_db: AsyncEngine) -> Non
     assert {row.sku_id: row.ordered_qty for row in line_rows} == {"S": 3, "T": 7}
 
 
+async def test_remove_on_hand_guarded_by_available(committed_db: AsyncEngine) -> None:
+    await _seed_two_cells(committed_db, on_hand=5)  # S at shelf L1/L2, on_hand 5 each
+    factory = postgres_uow_factory(committed_db)
+    async with factory() as uow:
+        await uow.stock.reserve_up_to(SkuId("S"), LocationId("L1"), 2)  # reserved 2 of 5
+        assert await uow.stock.remove_on_hand(SkuId("S"), LocationId("L1"), 3) is True  # avail 3
+        assert (
+            await uow.stock.remove_on_hand(SkuId("S"), LocationId("L1"), 1) is False
+        )  # 2 left, reserved
+        await uow.commit()
+    async with committed_db.connect() as conn:
+        cell = (
+            await conn.execute(
+                select(stock.c.qty_on_hand, stock.c.qty_reserved).where(stock.c.location_id == "L1")
+            )
+        ).one()
+    assert (cell.qty_on_hand, cell.qty_reserved) == (2, 2)  # 5-3 on hand; reserved untouched
+
+
+async def test_stock_locations_excludes_non_shelf(committed_db: AsyncEngine) -> None:
+    await seed_sku(committed_db, "S")
+    await seed_location(committed_db, "RCV", "receiving")
+    await seed_location(committed_db, "A1", "shelf")
+    async with committed_db.begin() as conn:
+        await conn.execute(
+            stock.insert().values(sku_id="S", location_id="RCV", qty_on_hand=10, qty_reserved=0)
+        )
+        await conn.execute(
+            stock.insert().values(sku_id="S", location_id="A1", qty_on_hand=4, qty_reserved=0)
+        )
+    factory = postgres_uow_factory(committed_db)
+    async with factory() as uow:
+        locs = await uow.stock.stock_locations(SkuId("S"))
+        await uow.commit()
+    assert locs == [(LocationId("A1"), 4)]  # receiving cell excluded; only the shelf
+
+
 async def test_insert_order_with_no_lines(committed_db: AsyncEngine) -> None:
     """insert_order with an empty lines sequence still inserts the order row only."""
     order_id = new_order_id()

@@ -117,3 +117,80 @@ async def test_get_receipt_404_when_missing() -> None:
         resp = await client.get(f"/receipts/{_RCID}")
     assert resp.status_code == 404
     assert resp.json()["error"] == "receipt_not_found"
+
+
+async def test_putaway_relocates_and_returns_putaway_complete() -> None:
+    line = ReceiptLine(ReceiptId(_RCID), SkuId("A"), 5, 5)
+    receipt = Receipt(
+        ReceiptId(_RCID), ReceiptKind.SUPPLIER_RECEIPT, ReceiptState.RECEIVED, 3, _FIXED, None
+    )
+    uow = FakeUnitOfWork(
+        receipts=FakeReceiptRepo(receipt=receipt, lines=[line]),
+        stock=FakeStockRepo(),
+        movements=FakeMovementRepo(),
+        catalog=FakeCatalogRepo(known_locations={LocationId("RCV"), LocationId("A1")}),
+        idempotency=FakeIdempotencyRepo(),
+    )
+    async with _client(uow) as client:
+        resp = await client.post(
+            f"/receipts/{_RCID}/putaway",
+            json={"from_location": "RCV", "to_location": "A1"},
+            headers={"Idempotency-Key": "k1"},
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["state"] == "putaway_complete"
+    assert body["lines"] == [{"sku_id": "A", "moved": 5}]
+
+
+async def test_putaway_unknown_location_422() -> None:
+    line = ReceiptLine(ReceiptId(_RCID), SkuId("A"), 5, 5)
+    receipt = Receipt(
+        ReceiptId(_RCID), ReceiptKind.SUPPLIER_RECEIPT, ReceiptState.RECEIVED, 3, _FIXED, None
+    )
+    uow = FakeUnitOfWork(
+        receipts=FakeReceiptRepo(receipt=receipt, lines=[line]),
+        stock=FakeStockRepo(),
+        movements=FakeMovementRepo(),
+        catalog=FakeCatalogRepo(known_locations={LocationId("A1")}),  # RCV missing
+        idempotency=FakeIdempotencyRepo(),
+    )
+    async with _client(uow) as client:
+        resp = await client.post(
+            f"/receipts/{_RCID}/putaway",
+            json={"from_location": "RCV", "to_location": "A1"},
+            headers={"Idempotency-Key": "k1"},
+        )
+    assert resp.status_code == 422
+    assert resp.json()["error"] == "unknown_location"
+
+
+async def test_close_receipt_returns_closed() -> None:
+    receipt = Receipt(
+        ReceiptId(_RCID),
+        ReceiptKind.SUPPLIER_RECEIPT,
+        ReceiptState.PUTAWAY_COMPLETE,
+        4,
+        _FIXED,
+        None,
+    )
+    uow = FakeUnitOfWork(
+        receipts=FakeReceiptRepo(receipt=receipt), idempotency=FakeIdempotencyRepo()
+    )
+    async with _client(uow) as client:
+        resp = await client.post(f"/receipts/{_RCID}/close", headers={"Idempotency-Key": "k1"})
+    assert resp.status_code == 200
+    assert resp.json()["state"] == "closed"
+
+
+async def test_cancel_receipt_returns_cancelled() -> None:
+    receipt = Receipt(
+        ReceiptId(_RCID), ReceiptKind.SUPPLIER_RECEIPT, ReceiptState.ARRIVED, 2, _FIXED, None
+    )
+    uow = FakeUnitOfWork(
+        receipts=FakeReceiptRepo(receipt=receipt), idempotency=FakeIdempotencyRepo()
+    )
+    async with _client(uow) as client:
+        resp = await client.post(f"/receipts/{_RCID}/cancel", headers={"Idempotency-Key": "k1"})
+    assert resp.status_code == 200
+    assert resp.json()["state"] == "cancelled"

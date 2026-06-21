@@ -39,6 +39,7 @@ from quartermaster.application.ports import (
     UnitOfWork,
     UnitOfWorkFactory,
 )
+from quartermaster.domain.catalog import LocationKind
 from quartermaster.domain.idempotency import IdempotencyStatus
 from quartermaster.domain.ids import (
     IdempotencyKey,
@@ -76,11 +77,15 @@ class PgStockRepo:
         self._conn = conn
 
     async def stock_locations(self, sku: SkuId) -> list[tuple[LocationId, int]]:
+        available = stock.c.qty_on_hand - stock.c.qty_reserved
         rows = await self._conn.execute(
-            select(
-                stock.c.location_id, (stock.c.qty_on_hand - stock.c.qty_reserved).label("available")
+            select(stock.c.location_id, available.label("available"))
+            .join(location_table, location_table.c.location_id == stock.c.location_id)
+            .where(
+                stock.c.sku_id == sku,
+                available > 0,
+                location_table.c.kind == LocationKind.SHELF.value,
             )
-            .where(stock.c.sku_id == sku, (stock.c.qty_on_hand - stock.c.qty_reserved) > 0)
             .order_by(stock.c.location_id)
         )
         return [(LocationId(r.location_id), int(r.available)) for r in rows]
@@ -131,6 +136,18 @@ class PgStockRepo:
             set_={"qty_on_hand": stock.c.qty_on_hand + qty},
         )
         await self._conn.execute(stmt)
+
+    async def remove_on_hand(self, sku: SkuId, location: LocationId, qty: int) -> bool:
+        result = await self._conn.execute(
+            stock.update()
+            .where(
+                stock.c.sku_id == sku,
+                stock.c.location_id == location,
+                stock.c.qty_on_hand - stock.c.qty_reserved >= qty,
+            )
+            .values(qty_on_hand=stock.c.qty_on_hand - qty)
+        )
+        return result.rowcount == 1
 
 
 class PgOrderRepo:

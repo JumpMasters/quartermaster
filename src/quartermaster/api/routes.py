@@ -14,7 +14,9 @@ from quartermaster.api.schemas import (
     AllocateResponse,
     AllocationLineOut,
     ArriveResponse,
+    CancelReceiptResponse,
     CancelResponse,
+    CloseReceiptResponse,
     CreatedLineOut,
     CreateOrderRequest,
     CreateOrderResponse,
@@ -26,6 +28,9 @@ from quartermaster.api.schemas import (
     PackResponse,
     PickedLineOut,
     PickResponse,
+    PutawayLineOut,
+    PutawayRequest,
+    PutawayResponse,
     ReceiptLineView,
     ReceiptResponse,
     ReceiveLineOut,
@@ -37,10 +42,13 @@ from quartermaster.api.schemas import (
 from quartermaster.application.handlers.allocate import run_allocate
 from quartermaster.application.handlers.arrive import run_arrive
 from quartermaster.application.handlers.cancel import run_cancel
+from quartermaster.application.handlers.cancel_receipt import run_cancel_receipt
+from quartermaster.application.handlers.close_receipt import run_close_receipt
 from quartermaster.application.handlers.create_order import run_create_order
 from quartermaster.application.handlers.create_receipt import run_create_receipt
 from quartermaster.application.handlers.pack import run_pack
 from quartermaster.application.handlers.pick import run_pick
+from quartermaster.application.handlers.putaway import run_putaway
 from quartermaster.application.handlers.receive import run_receive
 from quartermaster.application.handlers.ship import run_ship
 from quartermaster.application.queries import load_order, load_receipt
@@ -260,5 +268,45 @@ def build_router(deps: Deps) -> APIRouter:
                 ReceiveLineOut(sku_id=line.sku_id, received=line.received) for line in result.lines
             ],
         )
+
+    @router.post("/receipts/{receipt_id}/putaway", response_model=PutawayResponse)
+    async def putaway_route(
+        receipt_id: UUID,
+        body: PutawayRequest,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> PutawayResponse:
+        key = _require_key(idempotency_key)
+        result = await run_putaway(
+            deps.uow_factory,
+            ReceiptId(receipt_id),
+            LocationId(body.from_location),
+            LocationId(body.to_location),
+            key,
+            now=deps.now,
+            new_movement_id=deps.new_movement_id,
+        )
+        return PutawayResponse(
+            receipt_id=result.receipt_id,
+            state=result.state.value,
+            lines=[PutawayLineOut(sku_id=line.sku_id, moved=line.moved) for line in result.lines],
+        )
+
+    @router.post("/receipts/{receipt_id}/close", response_model=CloseReceiptResponse)
+    async def close_receipt_route(
+        receipt_id: UUID,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> CloseReceiptResponse:
+        key = _require_key(idempotency_key)
+        result = await run_close_receipt(deps.uow_factory, ReceiptId(receipt_id), key)
+        return CloseReceiptResponse(receipt_id=result.receipt_id, state=result.state.value)
+
+    @router.post("/receipts/{receipt_id}/cancel", response_model=CancelReceiptResponse)
+    async def cancel_receipt_route(
+        receipt_id: UUID,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> CancelReceiptResponse:
+        key = _require_key(idempotency_key)
+        result = await run_cancel_receipt(deps.uow_factory, ReceiptId(receipt_id), key)
+        return CancelReceiptResponse(receipt_id=result.receipt_id, state=result.state.value)
 
     return router

@@ -7,9 +7,13 @@ from uuid import UUID
 from quartermaster.application.results import (
     AllocateResult,
     ArriveResult,
+    CancelReceiptResult,
+    CloseReceiptResult,
     CreatedReceiptLine,
     CreateReceiptResult,
     LineAllocation,
+    PutawayLine,
+    PutawayResult,
     ReceivedLine,
     ReceiveResult,
 )
@@ -170,3 +174,18 @@ def test_arrive_result_round_trips() -> None:
 def test_receive_result_round_trips() -> None:
     r = ReceiveResult(_RID, ReceiptState.RECEIVED, (ReceivedLine(SkuId("A"), 3),))
     assert ReceiveResult.decode(r.to_response()) == r
+
+
+def test_putaway_result_round_trips() -> None:
+    r = PutawayResult(_RID, ReceiptState.PUTAWAY_COMPLETE, (PutawayLine(SkuId("A"), 5),))
+    assert PutawayResult.decode(r.to_response()) == r
+
+
+def test_close_receipt_result_round_trips() -> None:
+    r = CloseReceiptResult(_RID, ReceiptState.CLOSED)
+    assert CloseReceiptResult.decode(r.to_response()) == r
+
+
+def test_cancel_receipt_result_round_trips() -> None:
+    r = CancelReceiptResult(_RID, ReceiptState.CANCELLED)
+    assert CancelReceiptResult.decode(r.to_response()) == r
