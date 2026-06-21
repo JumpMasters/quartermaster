@@ -10,8 +10,7 @@ import httpx
 from quartermaster.api.app import create_app
 from quartermaster.domain.ids import OrderId, ReceiptId, SkuId
 from quartermaster.domain.orders import Order, OrderLine
-from quartermaster.domain.receipts import Receipt, ReceiptKind, ReceiptLine
-from quartermaster.domain.state_machines import OrderState, ReceiptState
+from quartermaster.domain.state_machines import OrderState
 from tests.unit.api_helpers import make_deps
 from tests.unit.fakes import (
     FakeIdempotencyRepo,
