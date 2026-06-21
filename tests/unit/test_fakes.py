@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from quartermaster.application.ports import ClaimOutcome, UnitOfWork
+from quartermaster.domain.catalog import LocationKind
 from quartermaster.domain.ids import LocationId, ReceiptId, SkuId
 from quartermaster.domain.receipts import Receipt, ReceiptKind, ReceiptLine
 from quartermaster.domain.state_machines import ReceiptState
@@ -63,10 +64,16 @@ async def test_fake_stock_add_on_hand_accumulates() -> None:
     assert stock.cells[(SkuId("A"), LocationId("L1"))] == 5
 
 
-async def test_fake_catalog_location_exists() -> None:
+async def test_fake_catalog_location_kind_from_explicit_map() -> None:
+    catalog = FakeCatalogRepo(known_locations={LocationId("L1"): LocationKind.SHELF})
+    assert await catalog.location_kind(LocationId("L1")) is LocationKind.SHELF
+    assert await catalog.location_kind(LocationId("L2")) is None
+
+
+async def test_fake_catalog_bare_location_set_defaults_to_non_shelf() -> None:
     catalog = FakeCatalogRepo(known_locations={LocationId("L1")})
-    assert await catalog.location_exists(LocationId("L1"))
-    assert not await catalog.location_exists(LocationId("L2"))
+    assert await catalog.location_kind(LocationId("L1")) is LocationKind.RECEIVING
+    assert await catalog.location_kind(LocationId("L2")) is None
 
 
 async def test_fake_stock_remove_on_hand_records_and_returns() -> None:

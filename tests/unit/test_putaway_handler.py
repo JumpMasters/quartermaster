@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from itertools import count
 from uuid import UUID
@@ -13,9 +13,11 @@ from quartermaster.application.commands import PutawayCommand
 from quartermaster.application.errors import OccConflict
 from quartermaster.application.handlers.putaway import putaway
 from quartermaster.application.results import PutawayResult
+from quartermaster.domain.catalog import LocationKind
 from quartermaster.domain.errors import (
     IllegalTransition,
     InvariantViolation,
+    LocationKindMismatch,
     ReceiptNotFound,
     UnknownLocation,
 )
@@ -60,13 +62,17 @@ def _harness(
     lines: list[ReceiptLine],
     cas_result: bool = True,
     remove_result: bool = True,
-    known_locations: frozenset[LocationId] = frozenset({FROM, TO}),
+    known_locations: Mapping[LocationId, LocationKind] | None = None,
 ) -> tuple[FakeUnitOfWork, FakeReceiptRepo, FakeStockRepo, FakeMovementRepo]:
     receipts = FakeReceiptRepo(receipt=receipt, lines=lines, cas_result=cas_result)
     stock = FakeStockRepo()
     stock.remove_result = remove_result
     movements = FakeMovementRepo()
-    catalog = FakeCatalogRepo(known_locations=set(known_locations))
+    catalog = FakeCatalogRepo(
+        known_locations={FROM: LocationKind.RECEIVING, TO: LocationKind.SHELF}
+        if known_locations is None
+        else known_locations
+    )
     uow = FakeUnitOfWork(receipts=receipts, stock=stock, movements=movements, catalog=catalog)
     return uow, receipts, stock, movements
 
@@ -122,14 +128,30 @@ async def test_putaway_from_arrived_raises_illegal_transition() -> None:
 
 
 async def test_putaway_unknown_from_location_rejected() -> None:
-    uow, *_ = _harness(receipt=_receipt(), lines=[_line("A", 5)], known_locations=frozenset({TO}))
+    uow, *_ = _harness(
+        receipt=_receipt(), lines=[_line("A", 5)], known_locations={TO: LocationKind.SHELF}
+    )
     with pytest.raises(UnknownLocation):
         await _run(uow)
 
 
 async def test_putaway_unknown_to_location_rejected() -> None:
-    uow, *_ = _harness(receipt=_receipt(), lines=[_line("A", 5)], known_locations=frozenset({FROM}))
+    uow, *_ = _harness(
+        receipt=_receipt(), lines=[_line("A", 5)], known_locations={FROM: LocationKind.RECEIVING}
+    )
     with pytest.raises(UnknownLocation):
+        await _run(uow)
+
+
+async def test_putaway_to_non_shelf_location_rejected() -> None:
+    # Allocation only reserves from shelves, so putting away to a non-shelf cell
+    # would silently strand the stock as unallocatable: reject it.
+    uow, *_ = _harness(
+        receipt=_receipt(),
+        lines=[_line("A", 5)],
+        known_locations={FROM: LocationKind.RECEIVING, TO: LocationKind.RECEIVING},
+    )
+    with pytest.raises(LocationKindMismatch):
         await _run(uow)
 
 

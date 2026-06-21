@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -25,7 +26,7 @@ from quartermaster.application.handlers.create_receipt import run_create_receipt
 from quartermaster.application.handlers.putaway import run_putaway
 from quartermaster.application.handlers.receive import run_receive
 from quartermaster.application.results import CreateReceiptResult, PutawayResult
-from quartermaster.domain.errors import IllegalTransition
+from quartermaster.domain.errors import IllegalTransition, LocationKindMismatch
 from quartermaster.domain.ids import IdempotencyKey, LocationId, ReceiptId, SkuId
 from quartermaster.domain.movements import MovementType
 from quartermaster.domain.state_machines import OrderState, ReceiptState
@@ -129,6 +130,36 @@ async def test_putaway_full_lifecycle_relocates_and_closes(committed_db: AsyncEn
     assert putaways == 1
     # conservation: PUTAWAY is net-zero, so total on-hand == Σ RECEIVE
     assert sum(on_hand.values()) == receives == 5
+
+
+async def test_putaway_to_non_shelf_location_rejected(committed_db: AsyncEngine) -> None:
+    await seed_sku(committed_db, "S")
+    await seed_location(committed_db, "RCV", "receiving")
+    await seed_location(committed_db, "DOCK", "dock")
+    rid = await _receive_ready(committed_db, "S", 5, "ready")
+
+    with pytest.raises(LocationKindMismatch):
+        await _putaway(committed_db, rid, LocationId("RCV"), LocationId("DOCK"), "put")
+
+    async with committed_db.connect() as conn:
+        # The hard rejection moved nothing: the stock is still at the receiving cell
+        # and no PUTAWAY movement was appended.
+        cells = (
+            await conn.execute(
+                select(stock.c.location_id, stock.c.qty_on_hand)
+                .where(stock.c.sku_id == "S")
+                .order_by(stock.c.location_id)
+            )
+        ).all()
+        putaways = (
+            await conn.execute(
+                select(func.count())
+                .select_from(movement)
+                .where(movement.c.type == MovementType.PUTAWAY.value)
+            )
+        ).scalar_one()
+    assert [(c.location_id, c.qty_on_hand) for c in cells] == [("RCV", 5)]
+    assert putaways == 0
 
 
 async def test_putaway_partial_received_relocates_actual(committed_db: AsyncEngine) -> None:

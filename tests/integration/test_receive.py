@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -15,7 +16,11 @@ from quartermaster.application.handlers.arrive import run_arrive
 from quartermaster.application.handlers.create_receipt import run_create_receipt
 from quartermaster.application.handlers.receive import run_receive
 from quartermaster.application.results import CreateReceiptResult, ReceiveResult
-from quartermaster.domain.errors import IllegalTransition, InvalidReceiptLine
+from quartermaster.domain.errors import (
+    IllegalTransition,
+    InvalidReceiptLine,
+    LocationKindMismatch,
+)
 from quartermaster.domain.ids import IdempotencyKey, LocationId, ReceiptId, SkuId
 from quartermaster.domain.movements import MovementType
 from quartermaster.domain.state_machines import ReceiptState
@@ -108,6 +113,29 @@ async def test_receive_full_lifecycle_lands_stock(committed_db: AsyncEngine) -> 
     assert (cell.qty_on_hand, cell.qty_reserved) == (5, 0)
     assert receives == 1
     assert landed == cell.qty_on_hand  # conservation: Σ RECEIVE movements == on_hand
+
+
+async def test_receive_into_shelf_location_rejected(committed_db: AsyncEngine) -> None:
+    await seed_sku(committed_db, "S")
+    await seed_location(committed_db, "A1", "shelf")
+    created = await _create(committed_db, ((SkuId("S"), 5),), "create")
+    await _arrive(committed_db, created.receipt_id, "arrive")
+
+    with pytest.raises(LocationKindMismatch):
+        await _receive(
+            committed_db, created.receipt_id, LocationId("A1"), ((SkuId("S"), 5),), "recv"
+        )
+
+    async with committed_db.connect() as conn:
+        # The hard rejection mutates no stock and lands no movement at the shelf.
+        landed = (
+            await conn.execute(
+                select(func.coalesce(func.sum(stock.c.qty_on_hand), 0)).where(stock.c.sku_id == "S")
+            )
+        ).scalar_one()
+        moves = (await conn.execute(select(func.count()).select_from(movement))).scalar_one()
+    assert landed == 0
+    assert moves == 0
 
 
 async def test_receive_partial_records_shortfall(committed_db: AsyncEngine) -> None:

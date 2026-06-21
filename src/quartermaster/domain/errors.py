@@ -47,3 +47,10 @@ class UnknownLocation(QuartermasterError):
 class InvalidReceiptLine(QuartermasterError):
     """A receive line is absent from the receipt or would exceed its expected
     quantity (a hard rejection)."""
+
+
+class LocationKindMismatch(QuartermasterError):
+    """An inbound command named a location of the wrong kind: receiving into a
+    shelf, or putting away to a non-shelf (a hard rejection). Allocation only
+    reserves from shelves, so stock must stage at a non-shelf cell on receipt and
+    only become pickable once put away to a shelf."""

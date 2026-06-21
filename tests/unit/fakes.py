@@ -8,7 +8,7 @@ suite.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from typing import Any
 
@@ -25,6 +25,7 @@ from quartermaster.application.ports import (
     UnitOfWork,
     UnitOfWorkFactory,
 )
+from quartermaster.domain.catalog import LocationKind
 from quartermaster.domain.idempotency import IdempotencyStatus
 from quartermaster.domain.ids import (
     IdempotencyKey,
@@ -243,16 +244,24 @@ class FakeCatalogRepo:
     def __init__(
         self,
         known: set[SkuId] | None = None,
-        known_locations: set[LocationId] | None = None,
+        known_locations: Mapping[LocationId, LocationKind] | Iterable[LocationId] | None = None,
     ) -> None:
         self.known = known if known is not None else set()
-        self.known_locations = known_locations if known_locations is not None else set()
+        # Locations may be given with explicit kinds, or as a bare iterable of ids
+        # (existence-only) that defaults each to a non-shelf staging cell — the kind
+        # the inbound write path accepts for ``receive``.
+        if known_locations is None:
+            self.known_locations: dict[LocationId, LocationKind] = {}
+        elif isinstance(known_locations, Mapping):
+            self.known_locations = dict(known_locations)
+        else:
+            self.known_locations = dict.fromkeys(known_locations, LocationKind.RECEIVING)
 
     async def missing_skus(self, skus: set[SkuId]) -> set[SkuId]:
         return skus - self.known
 
-    async def location_exists(self, location: LocationId) -> bool:
-        return location in self.known_locations
+    async def location_kind(self, location: LocationId) -> LocationKind | None:
+        return self.known_locations.get(location)
 
 
 class FakeIdempotencyRepo:

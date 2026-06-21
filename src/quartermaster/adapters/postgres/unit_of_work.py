@@ -402,13 +402,13 @@ class PgCatalogRepo:
         found = {SkuId(r.sku_id) for r in rows}
         return skus - found
 
-    async def location_exists(self, location: LocationId) -> bool:
+    async def location_kind(self, location: LocationId) -> LocationKind | None:
         row = (
             await self._conn.execute(
-                select(location_table.c.location_id).where(location_table.c.location_id == location)
+                select(location_table.c.kind).where(location_table.c.location_id == location)
             )
         ).first()
-        return row is not None
+        return LocationKind(row.kind) if row is not None else None
 
 
 class PgReservationRepo:

@@ -15,6 +15,7 @@ from quartermaster.domain.errors import (
     IllegalTransition,
     InsufficientStock,
     InvalidReceiptLine,
+    LocationKindMismatch,
     ReceiptNotFound,
     UnknownLocation,
 )
@@ -195,7 +196,7 @@ async def test_unknown_sku_replay_reraises() -> None:
 
 
 def test_inbound_errors_are_hard_rejections() -> None:
-    for exc_type in (ReceiptNotFound, UnknownLocation, InvalidReceiptLine):
+    for exc_type in (ReceiptNotFound, UnknownLocation, InvalidReceiptLine, LocationKindMismatch):
         assert exc_type in HARD_REJECTION
 
 
@@ -208,4 +209,7 @@ def test_rejection_error_maps_inbound_codes() -> None:
     )
     assert isinstance(
         _rejection_error({"error": "InvalidReceiptLine", "detail": "x"}), InvalidReceiptLine
+    )
+    assert isinstance(
+        _rejection_error({"error": "LocationKindMismatch", "detail": "x"}), LocationKindMismatch
     )
