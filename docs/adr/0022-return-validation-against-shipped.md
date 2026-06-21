@@ -24,8 +24,14 @@ quantities:
 
 Validation is **non-cumulative**: the engine does not track how much of an order
 has already been returned across earlier RMAs. `ReturnNotAllowed` is a hard
-rejection (idempotency-cached), because it is deterministic given the order's
-terminal `shipped` state.
+rejection (idempotency-cached): like the other inbound request-validation
+failures (`UnknownLocation`, `InvalidReceiptLine`), it rejects a request that is
+illegal against the order as referenced, so it is cached and replayed under that
+idempotency key. A genuinely new return — including a retry after the order
+reaches `shipped` — is a distinct request under a new key and is re-evaluated.
+This differs from `InsufficientStock`, which is left uncached because the
+allocate/backorder machinery is built to retry it; a return has no such
+auto-retry path.
 
 ## Consequences
 
@@ -39,3 +45,8 @@ terminal `shipped` state.
   returns: "must be a shipped line on the order" subsumes it.
 - The order is unchanged by a return; it stays `shipped` (an RMA is an
   independent inbound document, per 0008), so there is no second restock path.
+- Returns are accepted only from `shipped`, which is the last *pre-terminal*
+  order state, not a terminal one: `shipped → closed` is a legal transition. Once
+  an order is closed it would no longer accept returns. No order-close command is
+  wired today, so this is not reachable yet; extending returnability to `closed`
+  orders is deferred.
