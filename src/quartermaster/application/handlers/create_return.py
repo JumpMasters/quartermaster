@@ -42,9 +42,7 @@ async def create_return(
             f"order {command.order_id} is {order.state.value}, not shipped; cannot return"
         )
 
-    shipped = {
-        line.sku_id: line.shipped for line in await uow.orders.get_lines(command.order_id)
-    }
+    shipped = {line.sku_id: line.shipped for line in await uow.orders.get_lines(command.order_id)}
     for sku, qty in command.lines:
         available = shipped.get(sku, 0)
         if available == 0:
