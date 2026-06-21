@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from itertools import count
 from uuid import UUID
@@ -13,10 +13,12 @@ from quartermaster.application.commands import ReceiveCommand
 from quartermaster.application.errors import OccConflict
 from quartermaster.application.handlers.receive import receive
 from quartermaster.application.results import ReceiveResult
+from quartermaster.domain.catalog import LocationKind
 from quartermaster.domain.errors import (
     IllegalTransition,
     InvalidReceiptLine,
     InvariantViolation,
+    LocationKindMismatch,
     ReceiptNotFound,
     UnknownLocation,
 )
@@ -60,14 +62,18 @@ def _harness(
     lines: list[ReceiptLine],
     cas_result: bool = True,
     add_received_result: bool = True,
-    known_locations: frozenset[LocationId] = frozenset({LOC}),
+    known_locations: Mapping[LocationId, LocationKind] | None = None,
 ) -> tuple[FakeUnitOfWork, FakeReceiptRepo, FakeStockRepo, FakeMovementRepo]:
     receipts = FakeReceiptRepo(
         receipt=receipt, lines=lines, cas_result=cas_result, add_received_result=add_received_result
     )
     stock = FakeStockRepo()
     movements = FakeMovementRepo()
-    catalog = FakeCatalogRepo(known_locations=set(known_locations))
+    catalog = FakeCatalogRepo(
+        known_locations={LOC: LocationKind.RECEIVING}
+        if known_locations is None
+        else known_locations
+    )
     uow = FakeUnitOfWork(receipts=receipts, stock=stock, movements=movements, catalog=catalog)
     return uow, receipts, stock, movements
 
@@ -107,8 +113,18 @@ async def test_receive_partial_short_shipment_still_advances() -> None:
 
 
 async def test_receive_unknown_location_rejected() -> None:
-    uow, *_ = _harness(receipt=_receipt(), lines=[_line("A", 5)], known_locations=frozenset())
+    uow, *_ = _harness(receipt=_receipt(), lines=[_line("A", 5)], known_locations={})
     with pytest.raises(UnknownLocation):
+        await _run(uow)
+
+
+async def test_receive_into_shelf_location_rejected() -> None:
+    # Receive must land at a non-shelf staging cell; a shelf target would make the
+    # stock allocatable without ever being put away (the dock-vs-shelf invariant).
+    uow, *_ = _harness(
+        receipt=_receipt(), lines=[_line("A", 5)], known_locations={LOC: LocationKind.SHELF}
+    )
+    with pytest.raises(LocationKindMismatch):
         await _run(uow)
 
 

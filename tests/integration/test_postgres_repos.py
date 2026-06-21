@@ -19,6 +19,7 @@ from quartermaster.adapters.postgres.tables import (
 )
 from quartermaster.adapters.postgres.unit_of_work import PostgresUnitOfWork, postgres_uow_factory
 from quartermaster.application.ports import ClaimOutcome
+from quartermaster.domain.catalog import LocationKind
 from quartermaster.domain.idempotency import IdempotencyStatus
 from quartermaster.domain.ids import IdempotencyKey, LocationId, SkuId
 from quartermaster.domain.orders import Order, OrderLine
@@ -239,12 +240,14 @@ async def test_add_on_hand_inserts_then_increments(committed_db: AsyncEngine) ->
     assert (cell.qty_on_hand, cell.qty_reserved) == (5, 0)
 
 
-async def test_location_exists(committed_db: AsyncEngine) -> None:
+async def test_location_kind(committed_db: AsyncEngine) -> None:
     await seed_location(committed_db, "RCV", "receiving")
+    await seed_location(committed_db, "A1", "shelf")
     factory = postgres_uow_factory(committed_db)
     async with factory() as uow:
-        assert await uow.catalog.location_exists(LocationId("RCV"))
-        assert not await uow.catalog.location_exists(LocationId("NOPE"))
+        assert await uow.catalog.location_kind(LocationId("RCV")) is LocationKind.RECEIVING
+        assert await uow.catalog.location_kind(LocationId("A1")) is LocationKind.SHELF
+        assert await uow.catalog.location_kind(LocationId("NOPE")) is None
         await uow.commit()
 
 

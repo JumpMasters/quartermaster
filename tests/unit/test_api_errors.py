@@ -34,6 +34,7 @@ from quartermaster.application.ports import (
     UnitOfWork,
     UnitOfWorkFactory,
 )
+from quartermaster.domain.catalog import LocationKind
 from quartermaster.domain.idempotency import IdempotencyStatus
 from quartermaster.domain.ids import (
     IdempotencyKey,
@@ -195,8 +196,8 @@ class _NoopCatalogRepo:
     async def missing_skus(self, skus: set[SkuId]) -> set[SkuId]:  # pragma: no cover
         return set()
 
-    async def location_exists(self, location: LocationId) -> bool:  # pragma: no cover
-        return True
+    async def location_kind(self, location: LocationId) -> LocationKind | None:  # pragma: no cover
+        return LocationKind.RECEIVING
 
 
 class _NoopIdempotencyRepo:

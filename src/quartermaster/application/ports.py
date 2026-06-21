@@ -14,6 +14,7 @@ from datetime import datetime
 from enum import Enum, auto
 from typing import Any, Protocol
 
+from quartermaster.domain.catalog import LocationKind
 from quartermaster.domain.idempotency import IdempotencyStatus
 from quartermaster.domain.ids import (
     IdempotencyKey,
@@ -205,8 +206,13 @@ class CatalogRepo(Protocol):
         """Return the subset of ``skus`` that do not exist in the catalog."""
         ...
 
-    async def location_exists(self, location: LocationId) -> bool:
-        """Whether ``location`` exists in the catalog."""
+    async def location_kind(self, location: LocationId) -> LocationKind | None:
+        """The kind of ``location``, or ``None`` if it is absent from the catalog.
+
+        The inbound write path reasons about kind: ``receive`` lands stock only at
+        a non-shelf staging cell and ``putaway`` only targets a shelf, so a command
+        naming a location of the wrong kind is a hard rejection.
+        """
         ...
 
 

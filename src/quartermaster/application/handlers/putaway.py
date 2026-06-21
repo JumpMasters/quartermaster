@@ -21,7 +21,13 @@ from quartermaster.application.envelope import execute
 from quartermaster.application.errors import OccConflict
 from quartermaster.application.ports import UnitOfWork, UnitOfWorkFactory
 from quartermaster.application.results import PutawayLine, PutawayResult
-from quartermaster.domain.errors import InvariantViolation, ReceiptNotFound, UnknownLocation
+from quartermaster.domain.catalog import LocationKind
+from quartermaster.domain.errors import (
+    InvariantViolation,
+    LocationKindMismatch,
+    ReceiptNotFound,
+    UnknownLocation,
+)
 from quartermaster.domain.ids import IdempotencyKey, LocationId, MovementId, ReceiptId
 from quartermaster.domain.movements import Movement, MovementType
 from quartermaster.domain.state_machines import RECEIPT_MACHINE, ReceiptState
@@ -40,10 +46,16 @@ async def putaway(
         raise ReceiptNotFound(f"receipt {command.receipt_id} does not exist")
     RECEIPT_MACHINE.assert_legal(receipt.state, ReceiptState.PUTAWAY_COMPLETE)
 
-    if not await uow.catalog.location_exists(command.from_location):
+    if await uow.catalog.location_kind(command.from_location) is None:
         raise UnknownLocation(f"unknown location: {command.from_location}")
-    if not await uow.catalog.location_exists(command.to_location):
+    to_kind = await uow.catalog.location_kind(command.to_location)
+    if to_kind is None:
         raise UnknownLocation(f"unknown location: {command.to_location}")
+    if to_kind is not LocationKind.SHELF:
+        raise LocationKindMismatch(
+            f"cannot put away to non-shelf location {command.to_location}: "
+            "allocation reserves only from shelves, so putaway must target a shelf"
+        )
 
     lines = await uow.receipts.get_lines(command.receipt_id)
     if not await uow.receipts.cas_state(

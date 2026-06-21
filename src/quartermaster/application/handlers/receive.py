@@ -22,9 +22,11 @@ from quartermaster.application.envelope import execute
 from quartermaster.application.errors import OccConflict
 from quartermaster.application.ports import UnitOfWork, UnitOfWorkFactory
 from quartermaster.application.results import ReceivedLine, ReceiveResult
+from quartermaster.domain.catalog import LocationKind
 from quartermaster.domain.errors import (
     InvalidReceiptLine,
     InvariantViolation,
+    LocationKindMismatch,
     ReceiptNotFound,
     UnknownLocation,
 )
@@ -46,8 +48,14 @@ async def receive(
         raise ReceiptNotFound(f"receipt {command.receipt_id} does not exist")
     RECEIPT_MACHINE.assert_legal(receipt.state, ReceiptState.RECEIVING)
 
-    if not await uow.catalog.location_exists(command.location_id):
+    kind = await uow.catalog.location_kind(command.location_id)
+    if kind is None:
         raise UnknownLocation(f"unknown location: {command.location_id}")
+    if kind is LocationKind.SHELF:
+        raise LocationKindMismatch(
+            f"cannot receive into shelf location {command.location_id}: "
+            "receive lands stock at a non-shelf staging cell"
+        )
 
     lines_by_sku = {line.sku_id: line for line in await uow.receipts.get_lines(command.receipt_id)}
     # Pre-validate every provided line against the receipt before any write

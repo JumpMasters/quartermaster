@@ -8,6 +8,7 @@ from uuid import UUID
 import httpx
 
 from quartermaster.api.app import create_app
+from quartermaster.domain.catalog import LocationKind
 from quartermaster.domain.ids import LocationId, ReceiptId, SkuId
 from quartermaster.domain.receipts import Receipt, ReceiptKind, ReceiptLine
 from quartermaster.domain.state_machines import ReceiptState
@@ -111,6 +112,25 @@ async def test_receive_unknown_location_422() -> None:
     assert resp.json()["error"] == "unknown_location"
 
 
+async def test_receive_into_shelf_location_422() -> None:
+    line = ReceiptLine(ReceiptId(_RCID), SkuId("A"), 5, 0)
+    uow = FakeUnitOfWork(
+        receipts=FakeReceiptRepo(receipt=_arrived_receipt(), lines=[line]),
+        stock=FakeStockRepo(),
+        movements=FakeMovementRepo(),
+        catalog=FakeCatalogRepo(known_locations={LocationId("A1"): LocationKind.SHELF}),
+        idempotency=FakeIdempotencyRepo(),
+    )
+    async with _client(uow) as client:
+        resp = await client.post(
+            f"/receipts/{_RCID}/receive",
+            json={"location_id": "A1", "lines": [{"sku_id": "A", "qty": 5}]},
+            headers={"Idempotency-Key": "k1"},
+        )
+    assert resp.status_code == 422
+    assert resp.json()["error"] == "location_kind_mismatch"
+
+
 async def test_get_receipt_404_when_missing() -> None:
     uow = FakeUnitOfWork(receipts=FakeReceiptRepo(receipt=None))
     async with _client(uow) as client:
@@ -128,7 +148,12 @@ async def test_putaway_relocates_and_returns_putaway_complete() -> None:
         receipts=FakeReceiptRepo(receipt=receipt, lines=[line]),
         stock=FakeStockRepo(),
         movements=FakeMovementRepo(),
-        catalog=FakeCatalogRepo(known_locations={LocationId("RCV"), LocationId("A1")}),
+        catalog=FakeCatalogRepo(
+            known_locations={
+                LocationId("RCV"): LocationKind.RECEIVING,
+                LocationId("A1"): LocationKind.SHELF,
+            }
+        ),
         idempotency=FakeIdempotencyRepo(),
     )
     async with _client(uow) as client:
@@ -163,6 +188,33 @@ async def test_putaway_unknown_location_422() -> None:
         )
     assert resp.status_code == 422
     assert resp.json()["error"] == "unknown_location"
+
+
+async def test_putaway_to_non_shelf_location_422() -> None:
+    line = ReceiptLine(ReceiptId(_RCID), SkuId("A"), 5, 5)
+    receipt = Receipt(
+        ReceiptId(_RCID), ReceiptKind.SUPPLIER_RECEIPT, ReceiptState.RECEIVED, 3, _FIXED, None
+    )
+    uow = FakeUnitOfWork(
+        receipts=FakeReceiptRepo(receipt=receipt, lines=[line]),
+        stock=FakeStockRepo(),
+        movements=FakeMovementRepo(),
+        catalog=FakeCatalogRepo(
+            known_locations={
+                LocationId("RCV"): LocationKind.RECEIVING,
+                LocationId("DOCK"): LocationKind.DOCK,
+            }
+        ),
+        idempotency=FakeIdempotencyRepo(),
+    )
+    async with _client(uow) as client:
+        resp = await client.post(
+            f"/receipts/{_RCID}/putaway",
+            json={"from_location": "RCV", "to_location": "DOCK"},
+            headers={"Idempotency-Key": "k1"},
+        )
+    assert resp.status_code == 422
+    assert resp.json()["error"] == "location_kind_mismatch"
 
 
 async def test_close_receipt_returns_closed() -> None:
