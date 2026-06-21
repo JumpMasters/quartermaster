@@ -9,6 +9,7 @@ suite.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Any
 
 from quartermaster.application.ports import (
@@ -183,11 +184,14 @@ class FakeReservationRepo:
         held: list[Reservation] | None = None,
         *,
         transition_result: bool = True,
+        due: list[Reservation] | None = None,
     ) -> None:
         self.added: list[Reservation] = []
         self.held = held or []
         self.transition_result = transition_result
         self.transitions: list[tuple[ReservationId, ReservationState, ReservationState]] = []
+        self.due = list(due) if due is not None else []
+        self.due_calls: list[tuple[datetime, int]] = []
 
     async def add(self, reservation: Reservation) -> None:
         self.added.append(reservation)
@@ -200,6 +204,10 @@ class FakeReservationRepo:
     ) -> bool:
         self.transitions.append((reservation_id, expected, new))
         return self.transition_result
+
+    async def due_for_expiry(self, now: datetime, limit: int) -> list[Reservation]:
+        self.due_calls.append((now, limit))
+        return list(self.due[:limit])
 
 
 class FakeMovementRepo:

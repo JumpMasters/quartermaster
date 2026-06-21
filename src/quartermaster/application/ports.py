@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum, auto
 from typing import Any, Protocol
 
@@ -167,6 +168,10 @@ class ReservationRepo(Protocol):
         self, reservation_id: ReservationId, expected: ReservationState, new: ReservationState
     ) -> bool:
         """CAS the reservation state; False == 0 rows == already finalized by another actor."""
+        ...
+
+    async def due_for_expiry(self, now: datetime, limit: int) -> list[Reservation]:
+        """`held` reservations with ``expires_at <= now``, oldest first, at most ``limit``."""
         ...
 
 
