@@ -112,6 +112,7 @@ async def test_not_yet_due_reservation_is_untouched(committed_db: AsyncEngine) -
     assert run.scanned == 0 and run.acted == 0
     assert await _reservation_state(committed_db, res_id) == "held"
     assert await _reserved(committed_db, sku) == 3
+    await assert_invariants(committed_db, sku)
 
 
 async def test_concurrent_reapers_expire_exactly_once(committed_db: AsyncEngine) -> None:
@@ -134,6 +135,9 @@ async def test_concurrent_reapers_expire_exactly_once(committed_db: AsyncEngine)
         )
         return run.acted
 
+    # Two passes race under one event loop. Depending on I/O interleaving the
+    # loser hits either the HELD->EXPIRED CAS (0 rows) or the scan-skip path;
+    # both are correct and the assertions below hold for either (cf. test_allocate_races).
     acted = await asyncio.gather(pass_(), pass_())
 
     assert sum(acted) == 1  # the CAS guard: exactly one pass expired it
