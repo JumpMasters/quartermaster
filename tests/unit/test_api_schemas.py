@@ -29,6 +29,11 @@ def test_too_many_lines_rejected() -> None:
         CreateOrderRequest(lines=[{"sku_id": f"SKU-{i}", "qty": 1} for i in range(101)])
 
 
+def test_oversized_sku_id_rejected() -> None:
+    with pytest.raises(ValidationError):
+        CreateOrderRequest(lines=[{"sku_id": "A" * 65, "qty": 1}])
+
+
 def test_nonpositive_qty_rejected() -> None:
     with pytest.raises(ValidationError):
         CreateOrderRequest(lines=[{"sku_id": "A", "qty": 0}])
@@ -56,9 +61,19 @@ def test_receipt_line_input_rejects_nonpositive_qty() -> None:
         ReceiptLineInput(sku_id="A", qty=0)
 
 
+def test_receipt_line_input_rejects_oversized_sku_id() -> None:
+    with pytest.raises(ValidationError):
+        ReceiptLineInput(sku_id="A" * 65, qty=1)
+
+
 def test_receive_request_requires_location() -> None:
     with pytest.raises(ValidationError):
         ReceiveRequest(location_id="", lines=[ReceiptLineInput(sku_id="A", qty=1)])
+
+
+def test_receive_request_rejects_oversized_location() -> None:
+    with pytest.raises(ValidationError):
+        ReceiveRequest(location_id="A" * 65, lines=[ReceiptLineInput(sku_id="A", qty=1)])
 
 
 def test_putaway_request_valid() -> None:
@@ -71,3 +86,10 @@ def test_putaway_request_rejects_blank_locations() -> None:
         PutawayRequest(from_location="RCV", to_location="")
     with pytest.raises(ValidationError):
         PutawayRequest(from_location="", to_location="A1")
+
+
+def test_putaway_request_rejects_oversized_locations() -> None:
+    with pytest.raises(ValidationError):
+        PutawayRequest(from_location="A" * 65, to_location="A1")
+    with pytest.raises(ValidationError):
+        PutawayRequest(from_location="RCV", to_location="A" * 65)

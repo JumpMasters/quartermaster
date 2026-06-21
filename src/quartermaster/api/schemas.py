@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class OrderLineInput(BaseModel):
-    sku_id: str = Field(min_length=1)
+    sku_id: str = Field(min_length=1, max_length=64)
     qty: int = Field(gt=0)
 
 
@@ -106,7 +106,7 @@ class ErrorResponse(BaseModel):
 
 
 class ReceiptLineInput(BaseModel):
-    sku_id: str = Field(min_length=1)
+    sku_id: str = Field(min_length=1, max_length=64)
     qty: int = Field(gt=0)
 
 
@@ -140,7 +140,7 @@ class ArriveResponse(BaseModel):
 
 
 class ReceiveRequest(BaseModel):
-    location_id: str = Field(min_length=1)
+    location_id: str = Field(min_length=1, max_length=64)
     lines: list[ReceiptLineInput] = Field(min_length=1, max_length=100)
 
     @field_validator("lines")
@@ -179,10 +179,11 @@ class ReceiptResponse(BaseModel):
 
 class PutawayRequest(BaseModel):
     from_location: str = Field(
-        min_length=1, description="The receiving cell the stock is moving from."
+        min_length=1, max_length=64, description="The receiving cell the stock is moving from."
     )
     to_location: str = Field(
         min_length=1,
+        max_length=64,
         description=(
             "Destination cell. Should be a shelf (pickable) location: allocation only "
             "reserves from shelves, so stock put away to a non-shelf cell is not allocatable."

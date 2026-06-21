@@ -9,7 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, Header, Response, status
 
 from quartermaster.api.deps import Deps
-from quartermaster.api.errors import MissingIdempotencyKey
+from quartermaster.api.errors import IdempotencyKeyTooLong, MissingIdempotencyKey
 from quartermaster.api.schemas import (
     AllocateResponse,
     AllocationLineOut,
@@ -55,10 +55,16 @@ from quartermaster.application.queries import load_order, load_receipt
 from quartermaster.domain.errors import OrderNotFound, ReceiptNotFound
 from quartermaster.domain.ids import IdempotencyKey, LocationId, OrderId, ReceiptId, SkuId
 
+_MAX_IDEMPOTENCY_KEY_LENGTH = 256
+
 
 def _require_key(idempotency_key: str | None) -> IdempotencyKey:
     if not idempotency_key:
         raise MissingIdempotencyKey("the Idempotency-Key header is required")
+    if len(idempotency_key) > _MAX_IDEMPOTENCY_KEY_LENGTH:
+        raise IdempotencyKeyTooLong(
+            f"the Idempotency-Key header must be at most {_MAX_IDEMPOTENCY_KEY_LENGTH} characters"
+        )
     return IdempotencyKey(idempotency_key)
 
 
