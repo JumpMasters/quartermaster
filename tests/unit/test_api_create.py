@@ -61,6 +61,17 @@ async def test_create_missing_key_400() -> None:
     assert resp.json()["error"] == "missing_idempotency_key"
 
 
+async def test_create_oversized_idempotency_key_400() -> None:
+    async with _client(_uow()) as client:
+        resp = await client.post(
+            "/orders",
+            json={"lines": [{"sku_id": "A", "qty": 5}]},
+            headers={"Idempotency-Key": "k" * 257},
+        )
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "idempotency_key_too_long"
+
+
 async def test_create_validation_422() -> None:
     async with _client(_uow()) as client:
         resp = await client.post("/orders", json={"lines": []}, headers={"Idempotency-Key": "k1"})

@@ -30,9 +30,14 @@ class MissingIdempotencyKey(Exception):
     """A write request lacked the required Idempotency-Key header."""
 
 
+class IdempotencyKeyTooLong(Exception):
+    """The Idempotency-Key header exceeded the maximum allowed length."""
+
+
 # (exception type, HTTP status, error code)
 _STATUS_MAP: tuple[tuple[type[Exception], int, str], ...] = (
     (MissingIdempotencyKey, 400, "missing_idempotency_key"),
+    (IdempotencyKeyTooLong, 400, "idempotency_key_too_long"),
     (UnknownSku, 422, "unknown_sku"),
     (UnknownLocation, 422, "unknown_location"),
     (InvalidReceiptLine, 422, "invalid_receipt_line"),
