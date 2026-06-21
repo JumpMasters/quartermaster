@@ -522,6 +522,23 @@ class PgIdempotencyRepo:
             .values(status=status.value, response=response)
         )
 
+    async def delete_expired(self, before: datetime, limit: int) -> int:
+        result = await self._conn.execute(
+            text(
+                """
+                DELETE FROM idempotency_key
+                 WHERE key IN (
+                     SELECT key FROM idempotency_key
+                      WHERE created_at < :before
+                      ORDER BY created_at
+                      LIMIT :limit
+                 )
+                """
+            ),
+            {"before": before, "limit": limit},
+        )
+        return result.rowcount
+
 
 class PostgresUnitOfWork:
     """One transaction over an AsyncConnection, exposing the Postgres repos."""

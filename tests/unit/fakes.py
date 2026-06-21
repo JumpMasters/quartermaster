@@ -239,6 +239,7 @@ class FakeIdempotencyRepo:
         self,
         claim_outcome: ClaimOutcome = ClaimOutcome.CLAIMED,
         stored: StoredResponse | None = None,
+        delete_results: list[int] | None = None,
     ) -> None:
         self.claim_outcome = claim_outcome
         self.stored = stored
@@ -246,6 +247,8 @@ class FakeIdempotencyRepo:
         self.finalize_calls: list[
             tuple[IdempotencyKey, IdempotencyStatus, dict[str, Any] | None]
         ] = []
+        self.delete_results = list(delete_results) if delete_results is not None else []
+        self.delete_calls: list[tuple[datetime, int]] = []
 
     async def claim(self, key: IdempotencyKey, fingerprint: str) -> ClaimOutcome:
         self.claim_calls.append((key, fingerprint))
@@ -258,6 +261,10 @@ class FakeIdempotencyRepo:
         self, key: IdempotencyKey, status: IdempotencyStatus, response: dict[str, Any] | None
     ) -> None:
         self.finalize_calls.append((key, status, response))
+
+    async def delete_expired(self, before: datetime, limit: int) -> int:
+        self.delete_calls.append((before, limit))
+        return self.delete_results.pop(0) if self.delete_results else 0
 
 
 class FakeUnitOfWork:

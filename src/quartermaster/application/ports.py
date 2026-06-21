@@ -196,6 +196,10 @@ class IdempotencyRepo(Protocol):
         self, key: IdempotencyKey, status: IdempotencyStatus, response: dict[str, Any] | None
     ) -> None: ...
 
+    async def delete_expired(self, before: datetime, limit: int) -> int:
+        """Delete up to ``limit`` keys created before ``before``; return the count deleted."""
+        ...
+
 
 class UnitOfWork(Protocol):
     """One transaction's worth of repositories; an async context manager."""
