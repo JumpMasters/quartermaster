@@ -126,6 +126,9 @@ class _BoomOrderRepo:
     ) -> None:  # pragma: no cover
         raise RuntimeError("database on fire")
 
+    async def backordered_orders(self, limit: int) -> list[OrderId]:  # pragma: no cover
+        raise RuntimeError("database on fire")
+
 
 class _NoopReservationRepo:
     async def add(self, reservation: Reservation) -> None:  # pragma: no cover
