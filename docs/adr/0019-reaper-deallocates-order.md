@@ -52,3 +52,16 @@ order-line bookkeeping; the loser is a defined no-op.
   change, so the conservation oracle is unaffected (the `EXPIRE` movement, per
   ADR-0018, remains the sole ledger entry). This record governs the order-state
   consequence; ADR-0018 governs the ledger entry.
+- **Lock-ordering interaction (known, tracked separately).** `pick`/`cancel` lock
+  the order header → reservation → line; the reaper now locks reservation → line →
+  header. When a `pick`/`cancel` races the reaper on the very order whose
+  reservation is expiring, Postgres can detect an ABBA deadlock and abort one side.
+  This is a liveness/error-surface concern, not a correctness one — the
+  reservation-state CAS still guarantees exactly-once disposition and every
+  invariant holds. The reaper absorbs its own abort (caught, counted, retried next
+  pass); a `pick`/`cancel` aborted this way currently surfaces the raw
+  `DeadlockDetected` as a 500 rather than the bounded OCC retry the pipeline
+  intends for transient conflicts. Resolving that belongs at the adapter boundary
+  (translate Postgres `40P01`/`40001` → `OccConflict`; the application envelope is
+  deliberately database-agnostic and cannot catch a driver error), and is tracked
+  as its own change, out of scope for this record.
