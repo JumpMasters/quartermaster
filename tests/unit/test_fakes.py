@@ -78,3 +78,15 @@ async def test_fake_stock_remove_on_hand_records_and_returns() -> None:
         (SkuId("A"), LocationId("RCV"), 5),
         (SkuId("A"), LocationId("RCV"), 5),
     ]
+
+
+async def test_fake_order_repo_backordered_orders_respects_limit() -> None:
+    from uuid import uuid4
+
+    from quartermaster.domain.ids import OrderId
+    from tests.unit.fakes import FakeOrderRepo
+
+    ids = [OrderId(uuid4()) for _ in range(3)]
+    repo = FakeOrderRepo(backordered=ids)
+    assert await repo.backordered_orders(2) == ids[:2]
+    assert repo.backordered_calls == [2]

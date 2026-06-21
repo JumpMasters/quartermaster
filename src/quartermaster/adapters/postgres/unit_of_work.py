@@ -269,6 +269,15 @@ class PgOrderRepo:
                 ],
             )
 
+    async def backordered_orders(self, limit: int) -> list[OrderId]:
+        rows = await self._conn.execute(
+            select(orders.c.order_id)
+            .where(orders.c.state == OrderState.BACKORDERED.value)
+            .order_by(orders.c.created_at)
+            .limit(limit)
+        )
+        return [OrderId(r.order_id) for r in rows]
+
 
 class PgReceiptRepo:
     def __init__(self, conn: AsyncConnection) -> None:

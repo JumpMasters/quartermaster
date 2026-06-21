@@ -130,6 +130,10 @@ class OrderRepo(Protocol):
         """Insert a new order header and its lines (creation; no guard)."""
         ...
 
+    async def backordered_orders(self, limit: int) -> list[OrderId]:
+        """Backordered order ids, oldest first (FIFO by created_at), at most ``limit``."""
+        ...
+
 
 class ReceiptRepo(Protocol):
     async def get(self, receipt_id: ReceiptId) -> Receipt | None: ...

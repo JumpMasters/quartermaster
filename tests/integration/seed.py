@@ -37,14 +37,19 @@ async def seed_sku_locations_stock(engine: AsyncEngine, sku: str, cells: dict[st
     return SkuId(sku)
 
 
-async def seed_order(engine: AsyncEngine, *, state: OrderState, lines: dict[str, int]) -> OrderId:
+async def seed_order(
+    engine: AsyncEngine,
+    *,
+    state: OrderState,
+    lines: dict[str, int],
+    created_at: datetime | None = None,
+) -> OrderId:
     """Insert an order header in ``state`` with the given sku -> ordered_qty lines."""
     order_id = new_order_id()
+    when = created_at if created_at is not None else datetime.now(UTC)
     async with engine.begin() as conn:
         await conn.execute(
-            orders.insert().values(
-                order_id=order_id, state=state.value, version=1, created_at=datetime.now(UTC)
-            )
+            orders.insert().values(order_id=order_id, state=state.value, version=1, created_at=when)
         )
         for sku, ordered in lines.items():
             await conn.execute(

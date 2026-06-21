@@ -92,6 +92,7 @@ class FakeOrderRepo:
         add_allocated_result: bool = True,
         add_picked_result: bool = True,
         add_shipped_result: bool = True,
+        backordered: list[OrderId] | None = None,
     ) -> None:
         self.order = order
         self.lines = lines or []
@@ -104,6 +105,8 @@ class FakeOrderRepo:
         self.picked: list[tuple[OrderId, SkuId, int]] = []
         self.shipped: list[tuple[OrderId, SkuId, int]] = []
         self.inserted: list[tuple[Order, list[OrderLine]]] = []
+        self.backordered = list(backordered) if backordered is not None else []
+        self.backordered_calls: list[int] = []
 
     async def get(self, order_id: OrderId) -> Order | None:
         return self.order
@@ -135,6 +138,10 @@ class FakeOrderRepo:
 
     async def insert_order(self, order: Order, lines: Sequence[OrderLine]) -> None:
         self.inserted.append((order, list(lines)))
+
+    async def backordered_orders(self, limit: int) -> list[OrderId]:
+        self.backordered_calls.append(limit)
+        return list(self.backordered[:limit])
 
 
 class FakeReceiptRepo:
