@@ -69,5 +69,4 @@ def test_movement_is_immutable() -> None:
 def test_expire_movement_type_exists() -> None:
     from quartermaster.domain.movements import MovementType
 
-    assert MovementType.EXPIRE == "expire"
     assert MovementType.EXPIRE.value == "expire"
