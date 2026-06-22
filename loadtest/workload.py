@@ -22,7 +22,14 @@ from quartermaster.adapters.postgres.identifiers import (
     new_order_id,
     new_reservation_id,
 )
-from quartermaster.adapters.postgres.tables import location, order_line, orders, sku, stock
+from quartermaster.adapters.postgres.tables import (
+    location,
+    movement,
+    order_line,
+    orders,
+    sku,
+    stock,
+)
 from quartermaster.application.clock import system_clock
 from quartermaster.application.commands import AllocateCommand
 from quartermaster.application.envelope import execute
@@ -88,6 +95,22 @@ async def seed_comparative(
             await conn.execute(
                 stock.insert().values(
                     sku_id=s, location_id=loc, qty_on_hand=on_hand_per_cell, qty_reserved=0
+                )
+            )
+            # Synthetic RECEIVE movement so the oracle's on-hand ledger reconstruction
+            # agrees with the seeded stock row. Without this, conservation_on_hand
+            # always fails (ledger sees 0; stock table sees on_hand_per_cell).
+            await conn.execute(
+                movement.insert().values(
+                    movement_id=new_movement_id(),
+                    ts=datetime.now(UTC),
+                    type="receive",
+                    sku_id=s,
+                    from_location=None,
+                    to_location=loc,
+                    qty=on_hand_per_cell,
+                    ref=new_movement_id(),  # synthetic ref UUID; no FK on movement.ref
+                    command_id=f"seed-receive-{s}-{loc}",
                 )
             )
         for _ in range(n_orders):
