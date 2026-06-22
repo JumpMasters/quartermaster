@@ -36,6 +36,7 @@ The format follows Michael Nygard's
 - [0025 — Read transactions run at REPEATABLE READ for a single-snapshot view](0025-read-paths-repeatable-read-snapshot.md)
 - [0026 — Workers classify contention vs. faults, and the sweep retries OCC in-tick](0026-worker-fault-taxonomy-and-sweep-retry.md)
 - [0027 — Worker loop has a cancellable interval wait and a per-tick watchdog](0027-worker-cancellable-shutdown-and-tick-watchdog.md)
+- [0028 — OCC retries use jittered backoff; the 503 advertises a bounded Retry-After](0028-occ-retry-jittered-backoff.md)
 
 ## Adding a record
 
