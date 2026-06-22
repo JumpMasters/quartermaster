@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+from quartermaster.application.errors import OccConflict
 from quartermaster.domain.ids import LocationId, MovementId, OrderId, ReservationId, SkuId
 from quartermaster.domain.movements import MovementType
 from quartermaster.domain.reservations import Reservation
@@ -17,6 +18,25 @@ from tests.unit.fakes import (
     FakeUnitOfWork,
     fake_factory,
 )
+
+
+class _DeadlockingReservationRepo(FakeReservationRepo):
+    """A reservation repo whose CAS raises a translated-deadlock OccConflict.
+
+    Mirrors the reaper-vs-pick/cancel ABBA cycle (ADR-0019) that engine.py
+    translates to OccConflict (ADR-0020): a benign contention, not a fault.
+    """
+
+    async def transition(self, *args: object, **kwargs: object) -> bool:
+        raise OccConflict("reaper deadlock translated to OccConflict")
+
+
+class _BrokenStockRepo(FakeStockRepo):
+    """A stock repo whose release raises an unexpected (non-domain) error."""
+
+    async def release(self, sku: SkuId, location: LocationId, qty: int) -> bool:
+        raise RuntimeError("unexpected adapter failure")
+
 
 _NOW = datetime(2026, 6, 20, 12, 0, tzinfo=UTC)
 
@@ -48,6 +68,7 @@ async def test_expires_due_reservation() -> None:
     )
 
     assert run.scanned == 1 and run.acted == 1 and run.errors == 0
+    assert run.conflicts == 0 and run.invariant_violations == 0
     reservations = uow.reservations
     assert isinstance(reservations, FakeReservationRepo)
     assert reservations.transitions == [
@@ -82,7 +103,7 @@ async def test_already_finalised_reservation_is_a_noop() -> None:
     assert uow.movements.appended == []  # type: ignore[attr-defined]
 
 
-async def test_held_but_missing_stock_is_counted_as_error() -> None:
+async def test_held_but_missing_stock_is_an_invariant_violation() -> None:
     res = _due_reservation()
     uow = FakeUnitOfWork(
         reservations=FakeReservationRepo(due=[res]),
@@ -96,8 +117,40 @@ async def test_held_but_missing_stock_is_counted_as_error() -> None:
         fake_factory(uow), now=lambda: _NOW, new_movement_id=_movement_id, batch_size=500
     )
 
-    assert run.scanned == 1 and run.acted == 0 and run.errors == 1  # caught, pass continues
+    # A genuine integrity breach: its own escalatable counter, not the opaque errors bucket.
+    assert run.scanned == 1 and run.acted == 0
+    assert run.invariant_violations == 1 and run.errors == 0 and run.conflicts == 0
     assert uow.movements.appended == []  # type: ignore[attr-defined]
+
+
+async def test_transient_conflict_is_classified_as_conflict() -> None:
+    res = _due_reservation()
+    uow = FakeUnitOfWork(
+        reservations=_DeadlockingReservationRepo(due=[res]),
+        stock=FakeStockRepo(),
+    )
+    run = await reap_reservations(
+        fake_factory(uow), now=lambda: _NOW, new_movement_id=_movement_id, batch_size=500
+    )
+
+    # Benign contention (translated deadlock): counted apart from faults, retried next tick.
+    assert run.scanned == 1 and run.acted == 0
+    assert run.conflicts == 1 and run.errors == 0 and run.invariant_violations == 0
+
+
+async def test_unexpected_error_is_counted_as_error() -> None:
+    res = _due_reservation()
+    uow = FakeUnitOfWork(
+        reservations=FakeReservationRepo(due=[res]),
+        stock=_BrokenStockRepo(),
+    )
+    run = await reap_reservations(
+        fake_factory(uow), now=lambda: _NOW, new_movement_id=_movement_id, batch_size=500
+    )
+
+    # A genuinely unexpected exception still lands in errors with a stack trace.
+    assert run.scanned == 1 and run.acted == 0
+    assert run.errors == 1 and run.conflicts == 0 and run.invariant_violations == 0
 
 
 async def test_no_due_reservations() -> None:
@@ -144,7 +197,7 @@ async def test_already_backordered_order_is_not_recounted_as_reopened() -> None:
     assert orders.removed_allocated == [(res.order_id, res.sku_id, res.qty)]
 
 
-async def test_deallocation_guard_rejection_is_corruption_error() -> None:
+async def test_deallocation_guard_rejection_is_an_invariant_violation() -> None:
     res = _due_reservation()
     orders = FakeOrderRepo(remove_allocated_result=False)  # line/ledger disagree
     uow = FakeUnitOfWork(
@@ -156,7 +209,8 @@ async def test_deallocation_guard_rejection_is_corruption_error() -> None:
         fake_factory(uow), now=lambda: _NOW, new_movement_id=_movement_id, batch_size=500
     )
 
-    assert run.acted == 0 and run.reopened == 0 and run.errors == 1  # caught; pass continues
+    assert run.acted == 0 and run.reopened == 0
+    assert run.invariant_violations == 1 and run.errors == 0 and run.conflicts == 0
     stock = uow.stock
     assert isinstance(stock, FakeStockRepo)
     assert stock.release_calls == []  # raised before the stock release
