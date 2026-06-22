@@ -10,6 +10,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from quartermaster.application.oracle import (
+    _CLASSIFIED,
     CheckStatus,
     build_report,
     reconstruct,
@@ -69,6 +70,13 @@ def _balanced_cells() -> list[StockCell]:
 
 def _balanced_shipped() -> dict[SkuId, int]:
     return {S: 4}  # picked 4, shipped 4
+
+
+def test_every_movement_type_is_classified() -> None:
+    # reconstruct() folds the ledger via the four effect sets; a MovementType in none
+    # of them (nor the explicit no-effect set) would silently contribute nothing. Guard
+    # the classification's totality so a new type cannot be added without a decision.
+    assert set(MovementType) == _CLASSIFIED
 
 
 def test_reconstruct_balanced() -> None:

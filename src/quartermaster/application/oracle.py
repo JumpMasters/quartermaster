@@ -2,9 +2,21 @@
 
 A read-only, post-run audit. It reconstructs on-hand and reserved stock per
 ``(sku, location)`` cell from the append-only movement ledger and checks them
-against the live ``stock`` and ``order_line`` tables, surfacing lost-update /
-double-apply bugs the storage CHECK constraints cannot catch. It never runs on
-the command path: no envelope, no idempotency, no commit.
+against the live ``stock`` and ``order_line`` tables, surfacing **torn / lost
+writes** the storage CHECK constraints cannot catch — cases where one side of a
+command persisted and the other did not, so the ledger and the live row disagree.
+It never runs on the command path: no envelope, no idempotency, no commit.
+
+It does **not** witness a *lockstep double-apply*: every handler drives the
+guarded stock mutation and the appended movement from the same quantity in one
+transaction, so a whole-command replay doubles the live balance *and* the ledger
+reconstruction equally and conservation still agrees (and ``no_oversell`` need
+not trip). Exactly-once is therefore strictly stronger than conservation and is
+reported ``NOT_CHECKED`` here: the idempotency claim (``ON CONFLICT DO NOTHING``)
+enforces it on the write path, and it must be asserted **directly** — fire one
+idempotency key K times concurrently and assert both the resulting balance delta
+and the per-``command_id`` movement-row count equal exactly one application —
+which the concurrency tests and the load harness do, not this audit.
 
 The reconstruction is a pure function of the ledger's (type, from, to, qty)
 totals via this type->effect mapping:
@@ -88,6 +100,12 @@ _ON_HAND_ADD = frozenset({MovementType.RECEIVE, MovementType.PUTAWAY})  # at `to
 _ON_HAND_SUB = frozenset({MovementType.PUTAWAY, MovementType.PICK})  # at `from`
 _RESERVED_ADD = frozenset({MovementType.RESERVE})  # at `to`
 _RESERVED_SUB = frozenset({MovementType.RELEASE, MovementType.EXPIRE, MovementType.PICK})  # `from`
+# Types with no balance effect. Empty today (every type moves on-hand or reserved);
+# it exists so the classification is *total* over MovementType, which
+# test_oracle asserts -- a new type added without a deliberate effect (including
+# "no effect") fails CI rather than silently folding to zero in reconstruct().
+_NO_EFFECT: frozenset[MovementType] = frozenset()
+_CLASSIFIED = _ON_HAND_ADD | _ON_HAND_SUB | _RESERVED_ADD | _RESERVED_SUB | _NO_EFFECT
 
 
 def reconstruct(totals: Iterable[MovementTotal]) -> tuple[dict[Cell, int], dict[Cell, int]]:
@@ -123,6 +141,25 @@ def _conservation(
 def _no_oversell(
     totals: Iterable[MovementTotal], cells: Iterable[StockCell], shipped: dict[SkuId, int]
 ) -> CheckResult:
+    """``shipped + on_hand_total <= ever_received`` per SKU (``ever_received = Σ RECEIVE``).
+
+    Two limits, by design (ADR-0023):
+
+    * **Not an independent witness.** In a consistent store this cannot fail unless
+      ``conservation_on_hand`` ∧ ``state_integrity`` also fail; it is a sanity
+      ceiling, not the detector. The real on-hand detection load sits on
+      ``conservation_on_hand``.
+    * **RMA-inflated; blind to duplicate-return phantom stock (#73).**
+      ``ever_received`` counts *every* RECEIVE, including customer-RMA receives,
+      so a return raises the ceiling in lockstep with the on-hand it adds.
+      Restricting the ceiling to supplier receipts would be algebraically
+      identical (returned units sit in ``on_hand_total`` too, so they would move
+      to the left side unchanged), so it is left as-is. Consequence: N duplicate
+      RMAs against one shipped order (ADR-0022 does not cap cumulative returns)
+      manufacture real on-hand with matching RECEIVE rows, and this check stays
+      green. The load harness must not rely on ``no_oversell`` to catch that; it
+      caps one RMA per ``(origin_order, sku)`` instead.
+    """
     received: dict[SkuId, int] = defaultdict(int)
     for t in totals:
         if t.type is MovementType.RECEIVE:
@@ -201,6 +238,9 @@ def build_report(
             _no_oversell(totals, cells, shipped),
             _stock_bounds(cells),
             _state_integrity(bad_lines),
+            # NOT_CHECKED: conservation cannot witness a lockstep double-apply (see
+            # the module docstring). Exactly-once is asserted directly by the
+            # concurrency tests / load harness, not reconstructed here.
             CheckResult("exactly_once", CheckStatus.NOT_CHECKED),
         )
     )
