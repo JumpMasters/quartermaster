@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from quartermaster.adapters.postgres.identifiers import (
     new_order_id,
@@ -22,7 +22,11 @@ from quartermaster.adapters.postgres.tables import (
     sku,
     stock,
 )
-from quartermaster.adapters.postgres.unit_of_work import PostgresUnitOfWork, postgres_uow_factory
+from quartermaster.adapters.postgres.unit_of_work import (
+    PgStockRepo,
+    PostgresUnitOfWork,
+    postgres_uow_factory,
+)
 from quartermaster.application.ports import ClaimOutcome
 from quartermaster.domain.catalog import LocationKind
 from quartermaster.domain.idempotency import IdempotencyStatus
@@ -529,3 +533,23 @@ async def test_insert_receipt_with_no_lines(committed_db: AsyncEngine) -> None:
             )
         ).all()
     assert len(line_rows) == 0
+
+
+async def test_uow_defaults_to_pg_stock_repo(committed_db: AsyncEngine) -> None:
+    async with PostgresUnitOfWork(committed_db) as uow:
+        assert type(uow.stock) is PgStockRepo
+
+
+async def test_uow_uses_injected_stock_repo_factory(committed_db: AsyncEngine) -> None:
+    class SpyStockRepo(PgStockRepo):
+        pass
+
+    seen: list[AsyncConnection] = []
+
+    def factory(conn: AsyncConnection) -> SpyStockRepo:
+        seen.append(conn)
+        return SpyStockRepo(conn)
+
+    async with PostgresUnitOfWork(committed_db, stock_repo_factory=factory) as uow:
+        assert type(uow.stock) is SpyStockRepo
+    assert len(seen) == 1

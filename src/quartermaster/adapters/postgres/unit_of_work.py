@@ -9,7 +9,7 @@ against the level the code enforces, not the one the operator happens to ship.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import Any
 
@@ -728,9 +728,16 @@ class PostgresUnitOfWork:
     idempotency: IdempotencyRepo
     catalog: CatalogRepo
 
-    def __init__(self, engine: AsyncEngine, *, isolation_level: str | None = None) -> None:
+    def __init__(
+        self,
+        engine: AsyncEngine,
+        *,
+        isolation_level: str | None = None,
+        stock_repo_factory: Callable[[AsyncConnection], StockRepo] = PgStockRepo,
+    ) -> None:
         self._engine = engine
         self._isolation_level = isolation_level
+        self._stock_repo_factory = stock_repo_factory
         self._finished = False
 
     async def __aenter__(self) -> PostgresUnitOfWork:
@@ -738,7 +745,7 @@ class PostgresUnitOfWork:
         if self._isolation_level is not None:
             await self._conn.execution_options(isolation_level=self._isolation_level)
         self._trans = await self._conn.begin()
-        self.stock = PgStockRepo(self._conn)
+        self.stock = self._stock_repo_factory(self._conn)
         self.orders = PgOrderRepo(self._conn)
         self.receipts = PgReceiptRepo(self._conn)
         self.reservations = PgReservationRepo(self._conn)

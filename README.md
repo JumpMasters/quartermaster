@@ -123,6 +123,39 @@ Three complementary pillars:
    result and the ledger. A deterministic, scaled-down run gates every pull
    request; the full sweep runs on demand.
 
+### Comparative sweep
+
+The harness varies exactly one primitive — `StockRepo.reserve_up_to` — across
+three strategies, keeping the handler, transaction envelope, ledger, and oracle
+identical. The `naive` run is a falsification control: it uses an unguarded
+read-modify-write that passes all storage `CHECK` constraints but loses updates
+under concurrency; its oracle `FAIL` confirms the oracle would have caught a
+violation in the other two runs. `read_cas` is a value-compare-and-swap
+(correct, but retries under contention); `guarded` is the production
+conditional-write primitive.
+
+Figures below are from one measured run on a developer laptop (Apple M2,
+Postgres 17.10 in Docker, 4 SKUs, 64 concurrent allocations, concurrency=32).
+They are illustrative — throughput numbers vary with hardware — but the
+qualitative result is the property that matters: `naive` consistently oversells,
+`guarded` and `read_cas` do not.
+
+```
+  strategy    thrpt/s    p50ms    p99ms  retries  exhaust  oversell  oracle
+---------------------------------------------------------------------------
+     naive        156    197.1    394.7        0        0       106    FAIL
+  read_cas        162    170.2    361.3       95        1         0      OK
+   guarded        224    140.2    280.7        0        0         0      OK
+```
+
+The full on-demand sweep (larger scale) is:
+
+```sh
+uv run python -m loadtest \
+  --database-url "postgresql+asyncpg://user:pw@localhost:5432/qm" \
+  --orders 2000 --concurrency 128
+```
+
 ## Development and checks
 
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.13.

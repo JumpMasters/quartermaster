@@ -40,6 +40,7 @@ The format follows Michael Nygard's
 - [0029 — The idempotency write path is guarded against double-finalize and durable PENDING](0029-idempotency-write-path-hardening.md)
 - [0030 — One replica per worker type; only the idempotency GC partitions with SKIP LOCKED](0030-single-instance-workers-and-skip-locked-gc.md)
 - [0031 — Receiving cells are fungible (sku, location) staging; putaway trusts from_location](0031-fungible-receiving-cells-no-putaway-provenance.md)
+- [0032 — The load harness swaps exactly one primitive; `naive` is the falsification control](0032-load-harness-isolated-variable-and-falsification-control.md)
 
 ## Adding a record
 
