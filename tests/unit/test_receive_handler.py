@@ -19,6 +19,7 @@ from quartermaster.domain.errors import (
     InvalidReceiptLine,
     InvariantViolation,
     LocationKindMismatch,
+    QuantityCeilingExceeded,
     ReceiptNotFound,
     UnknownLocation,
 )
@@ -101,6 +102,16 @@ async def test_receive_lands_stock_and_advances() -> None:
         (ReceiptState.ARRIVED, 1, ReceiptState.RECEIVING),
         (ReceiptState.RECEIVING, 2, ReceiptState.RECEIVED),
     ]
+
+
+async def test_receive_quantity_ceiling_rejected() -> None:
+    # add_on_hand's WHERE rejects qty_on_hand + qty > MAX_QTY (rowcount 0 -> False):
+    # landing this stock would overflow the int4 cell. A clean ceiling rejection,
+    # not the opaque InvariantViolation/500 the cumulative overflow used to raise (#77).
+    uow, _, stock, _ = _harness(receipt=_receipt(), lines=[_line("A", 5)])
+    stock.add_on_hand_result = False
+    with pytest.raises(QuantityCeilingExceeded):
+        await _run(uow)
 
 
 async def test_receive_partial_short_shipment_still_advances() -> None:

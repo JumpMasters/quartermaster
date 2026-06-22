@@ -24,12 +24,14 @@ from quartermaster.application.results import PutawayLine, PutawayResult
 from quartermaster.domain.catalog import LocationKind
 from quartermaster.domain.errors import (
     LocationKindMismatch,
+    QuantityCeilingExceeded,
     ReceiptNotFound,
     StockConflict,
     UnknownLocation,
 )
 from quartermaster.domain.ids import IdempotencyKey, LocationId, MovementId, ReceiptId
 from quartermaster.domain.movements import Movement, MovementType
+from quartermaster.domain.quantities import MAX_QTY
 from quartermaster.domain.state_machines import RECEIPT_MACHINE, ReceiptState
 
 
@@ -76,7 +78,15 @@ async def putaway(
                 f"receipt {command.receipt_id} line {line.sku_id}: "
                 f"{line.received} not available at {command.from_location}"
             )
-        await uow.stock.add_on_hand(line.sku_id, command.to_location, line.received)
+        if not await uow.stock.add_on_hand(line.sku_id, command.to_location, line.received):
+            # The shelf cell would cross the int4 on-hand ceiling: a foreseeable boundary,
+            # not a server breach. Transient 409 -- the rollback discards lines already
+            # moved in this loop (#77).
+            raise QuantityCeilingExceeded(
+                f"receipt {command.receipt_id} line {line.sku_id}: putting away "
+                f"{line.received} at {command.to_location} would exceed the "
+                f"{MAX_QTY} on-hand ceiling"
+            )
         await uow.movements.append(
             Movement(
                 movement_id=new_movement_id(),

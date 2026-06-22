@@ -61,6 +61,7 @@ from quartermaster.domain.ids import (
 )
 from quartermaster.domain.movements import Movement, MovementType
 from quartermaster.domain.orders import Order, OrderLine
+from quartermaster.domain.quantities import MAX_QTY
 from quartermaster.domain.receipts import Receipt, ReceiptKind, ReceiptLine
 from quartermaster.domain.reservations import Reservation
 from quartermaster.domain.state_machines import OrderState, ReceiptState, ReservationState
@@ -133,7 +134,7 @@ class PgStockRepo:
         )
         return result.rowcount == 1
 
-    async def add_on_hand(self, sku: SkuId, location: LocationId, qty: int) -> None:
+    async def add_on_hand(self, sku: SkuId, location: LocationId, qty: int) -> bool:
         stmt = pg_insert(stock).values(
             sku_id=sku, location_id=location, qty_on_hand=qty, qty_reserved=0
         )
@@ -144,8 +145,15 @@ class PgStockRepo:
             # the row lock, so a concurrent receiver to the same cell blocks, re-reads
             # the committed total, and adds — no lost update. Do not "simplify" to excluded.
             set_={"qty_on_hand": stock.c.qty_on_hand + qty},
+            # Reject the increment that would push the cell past the int4 ceiling, BEFORE
+            # the overflow (issue #77). Phrased as `qty_on_hand <= MAX_QTY - qty` so the
+            # comparison itself never overflows int4: `MAX_QTY - qty` is a Python-evaluated
+            # bound parameter (qty <= MAX_QTY, so it stays in range), not SQL int4 arithmetic.
+            # A fresh insert lands qty (<= MAX_QTY) and is unaffected by this DO UPDATE guard.
+            where=stock.c.qty_on_hand <= MAX_QTY - qty,
         )
-        await self._conn.execute(stmt)
+        result = await self._conn.execute(stmt)
+        return result.rowcount == 1
 
     async def remove_on_hand(self, sku: SkuId, location: LocationId, qty: int) -> bool:
         result = await self._conn.execute(

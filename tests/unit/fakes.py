@@ -62,6 +62,7 @@ class FakeStockRepo:
         self.release_result = True
         self.release_calls: list[tuple[SkuId, LocationId, int]] = []
         self.received_calls: list[tuple[SkuId, LocationId, int]] = []
+        self.add_on_hand_result = True
         self.remove_result = True
         self.remove_calls: list[tuple[SkuId, LocationId, int]] = []
 
@@ -84,9 +85,12 @@ class FakeStockRepo:
         self.release_calls.append((sku, location, qty))
         return self.release_result
 
-    async def add_on_hand(self, sku: SkuId, location: LocationId, qty: int) -> None:
+    async def add_on_hand(self, sku: SkuId, location: LocationId, qty: int) -> bool:
         self.received_calls.append((sku, location, qty))
+        if not self.add_on_hand_result:
+            return False
         self.cells[(sku, location)] = self.cells.get((sku, location), 0) + qty
+        return True
 
     async def remove_on_hand(self, sku: SkuId, location: LocationId, qty: int) -> bool:
         self.remove_calls.append((sku, location, qty))

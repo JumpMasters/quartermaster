@@ -27,11 +27,13 @@ from quartermaster.domain.errors import (
     InvalidReceiptLine,
     InvariantViolation,
     LocationKindMismatch,
+    QuantityCeilingExceeded,
     ReceiptNotFound,
     UnknownLocation,
 )
 from quartermaster.domain.ids import IdempotencyKey, LocationId, MovementId, ReceiptId, SkuId
 from quartermaster.domain.movements import Movement, MovementType
+from quartermaster.domain.quantities import MAX_QTY
 from quartermaster.domain.state_machines import RECEIPT_MACHINE, ReceiptState
 
 
@@ -85,7 +87,13 @@ async def receive(
             raise InvariantViolation(
                 f"receipt {command.receipt_id} line {sku} guard rejected received += {qty}"
             )
-        await uow.stock.add_on_hand(sku, command.location_id, qty)
+        if not await uow.stock.add_on_hand(sku, command.location_id, qty):
+            # The cell would cross the int4 on-hand ceiling: a foreseeable boundary on a
+            # hot cell, not a server breach. Transient 409 -- the txn rolls back (#77).
+            raise QuantityCeilingExceeded(
+                f"receipt {command.receipt_id} line {sku}: receiving {qty} at "
+                f"{command.location_id} would exceed the {MAX_QTY} on-hand ceiling"
+            )
         await uow.movements.append(
             Movement(
                 movement_id=new_movement_id(),

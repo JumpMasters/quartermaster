@@ -28,6 +28,7 @@ from quartermaster.domain.catalog import LocationKind
 from quartermaster.domain.idempotency import IdempotencyStatus
 from quartermaster.domain.ids import IdempotencyKey, LocationId, ReceiptId, SkuId
 from quartermaster.domain.orders import Order, OrderLine
+from quartermaster.domain.quantities import MAX_QTY
 from quartermaster.domain.receipts import Receipt, ReceiptKind, ReceiptLine
 from quartermaster.domain.state_machines import OrderState, ReceiptState, ReservationState
 from tests.integration.seed import seed_location, seed_sku
@@ -234,8 +235,8 @@ async def test_add_on_hand_inserts_then_increments(committed_db: AsyncEngine) ->
     await seed_location(committed_db, "RCV", "receiving")
     factory = postgres_uow_factory(committed_db)
     async with factory() as uow:
-        await uow.stock.add_on_hand(SkuId("S"), LocationId("RCV"), 3)
-        await uow.stock.add_on_hand(SkuId("S"), LocationId("RCV"), 2)
+        assert await uow.stock.add_on_hand(SkuId("S"), LocationId("RCV"), 3) is True  # insert
+        assert await uow.stock.add_on_hand(SkuId("S"), LocationId("RCV"), 2) is True  # increment
         await uow.commit()
     async with committed_db.connect() as conn:
         cell = (
@@ -244,6 +245,33 @@ async def test_add_on_hand_inserts_then_increments(committed_db: AsyncEngine) ->
             )
         ).one()
     assert (cell.qty_on_hand, cell.qty_reserved) == (5, 0)
+
+
+async def test_add_on_hand_rejects_int4_ceiling_overflow(committed_db: AsyncEngine) -> None:
+    # A cell hammered to near the int4 ceiling: the increment that would cross MAX_QTY is
+    # rejected (rowcount 0 -> False) BEFORE asyncpg raises numeric_value_out_of_range (22003),
+    # and the committed value is unchanged (#77). An increment that exactly reaches MAX_QTY is
+    # allowed -- the guard rejects strictly above the ceiling.
+    await seed_sku(committed_db, "S")
+    await seed_location(committed_db, "RCV", "receiving")
+    async with committed_db.begin() as conn:
+        await conn.execute(
+            stock.insert().values(
+                sku_id="S", location_id="RCV", qty_on_hand=MAX_QTY - 3, qty_reserved=0
+            )
+        )
+    factory = postgres_uow_factory(committed_db)
+    async with factory() as uow:
+        assert await uow.stock.add_on_hand(SkuId("S"), LocationId("RCV"), 3) is True  # reaches MAX
+        assert (
+            await uow.stock.add_on_hand(SkuId("S"), LocationId("RCV"), 1) is False
+        )  # over ceiling
+        await uow.commit()
+    async with committed_db.connect() as conn:
+        on_hand = (
+            await conn.execute(select(stock.c.qty_on_hand).where(stock.c.sku_id == "S"))
+        ).scalar_one()
+    assert on_hand == MAX_QTY  # the rejected increment left the cell unchanged
 
 
 async def test_location_kind(committed_db: AsyncEngine) -> None:

@@ -24,6 +24,7 @@ from quartermaster.domain.errors import (
     InvariantViolation,
     LocationKindMismatch,
     OrderNotFound,
+    QuantityCeilingExceeded,
     ReceiptNotFound,
     ReturnNotAllowed,
     StockConflict,
@@ -57,6 +58,7 @@ _STATUS_MAP: tuple[tuple[type[Exception], int, str], ...] = (
     (IdempotencyInFlight, 409, "idempotency_in_flight"),
     (InsufficientStock, 409, "insufficient_stock"),
     (StockConflict, 409, "stock_conflict"),
+    (QuantityCeilingExceeded, 409, "quantity_ceiling_exceeded"),
     (RetryExhausted, 503, "retry_exhausted"),
 )
 

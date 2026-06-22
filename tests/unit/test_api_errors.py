@@ -87,8 +87,8 @@ class _NoopStockRepo:
 
     async def add_on_hand(
         self, sku: SkuId, location: LocationId, qty: int
-    ) -> None:  # pragma: no cover
-        pass
+    ) -> bool:  # pragma: no cover
+        return True
 
     async def remove_on_hand(
         self, sku: SkuId, location: LocationId, qty: int
