@@ -20,3 +20,6 @@ async def test_multiprocess_guarded_stays_clean(postgres_url: str) -> None:
     assert report.oversell == 0
     assert report.metrics.count == 48
     assert report.metrics.errors == 0
+    # The multi-process path measures its own end-to-end wall, so it reports a
+    # real aggregate throughput rather than a degenerate 0.0 (issue #96).
+    assert report.metrics.throughput > 0.0
