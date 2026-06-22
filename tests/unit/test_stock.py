@@ -90,6 +90,14 @@ def test_reserve_exactly_available_succeeds() -> None:
 
 
 # --- pick (consume reservation) --------------------------------------------
+#
+# Guard classification (issue #41): a shortfall against ``available`` is a
+# business shortage (``InsufficientStock``) -- the legitimate "not enough free
+# stock to allocate" outcome checked at reserve time. A shortfall against
+# ``reserved`` is an invariant breach (``InvariantViolation``): ``reserved`` is
+# internal bookkeeping the caller (order line / reservation row) guarantees, so
+# picking or releasing more than is held is never a business outcome, it is a
+# consistency violation -- the same condition the SQL guard reports as 0 rows.
 
 
 def test_pick_lowers_both_on_hand_and_reserved() -> None:
@@ -97,9 +105,9 @@ def test_pick_lowers_both_on_hand_and_reserved() -> None:
     assert level == StockLevel(on_hand=6, reserved=2)
 
 
-def test_pick_beyond_reserved_raises_insufficient_stock() -> None:
+def test_pick_beyond_reserved_raises_invariant_violation() -> None:
     level = StockLevel(on_hand=10, reserved=3)
-    with pytest.raises(InsufficientStock):
+    with pytest.raises(InvariantViolation):
         level.pick(4)
 
 
