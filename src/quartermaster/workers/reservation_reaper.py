@@ -17,6 +17,7 @@ import logging
 from collections.abc import Callable
 
 from quartermaster.application.clock import Clock
+from quartermaster.application.errors import OccConflict
 from quartermaster.application.ports import UnitOfWorkFactory
 from quartermaster.domain.errors import InvariantViolation
 from quartermaster.domain.ids import IdempotencyKey, MovementId
@@ -41,6 +42,8 @@ async def reap_reservations(
     acted = 0
     reopened = 0
     errors = 0
+    conflicts = 0
+    invariant_violations = 0
     for res in due:
         try:
             async with uow_factory() as uow:
@@ -75,8 +78,32 @@ async def reap_reservations(
                 acted += 1
                 if flipped:
                     reopened += 1
+        except OccConflict:
+            # A pick/cancel racing this reservation formed the ABBA cycle Postgres
+            # broke and engine.py translated (ADR-0019/0020). Benign contention:
+            # the transaction rolled back on exit and a later tick retries cleanly.
+            conflicts += 1
+            logger.info(
+                "reservation reaper conflict on %s; will retry next tick", res.reservation_id
+            )
+        except InvariantViolation:
+            # The one runtime integrity breach the reaper is positioned to detect:
+            # a held reservation whose backing stock/line cannot be unwound. Route
+            # it to its own counter so a real corruption signal can escalate rather
+            # than hide among routine races.
+            invariant_violations += 1
+            logger.error(
+                "reservation reaper INVARIANT VIOLATION on %s", res.reservation_id, exc_info=True
+            )
         except Exception:
             logger.exception("reservation reaper failed on %s", res.reservation_id)
             errors += 1
 
-    return ReaperRun(scanned=len(due), acted=acted, reopened=reopened, errors=errors)
+    return ReaperRun(
+        scanned=len(due),
+        acted=acted,
+        reopened=reopened,
+        errors=errors,
+        conflicts=conflicts,
+        invariant_violations=invariant_violations,
+    )
