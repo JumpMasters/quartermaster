@@ -38,3 +38,14 @@ def test_backorder_sweep_interval_default(monkeypatch: pytest.MonkeyPatch) -> No
 def test_worker_tick_timeout_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("QM_DATABASE_URL", "postgresql+asyncpg://u:p@localhost/db")
     assert Settings().worker_tick_timeout_s == 120.0
+
+
+def test_engine_pool_and_timeout_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("QM_DATABASE_URL", "postgresql+asyncpg://u:p@localhost/db")
+    settings = Settings()
+    assert settings.db_pool_size == 10
+    assert settings.db_max_overflow == 20
+    assert settings.db_pool_timeout_s == 30.0
+    assert settings.db_pool_pre_ping is True
+    assert settings.db_statement_timeout_ms == 30000
+    assert settings.db_lock_timeout_ms == 5000
