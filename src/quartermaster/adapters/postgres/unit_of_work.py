@@ -320,6 +320,11 @@ class PgOrderRepo:
             )
 
     async def backordered_orders(self, limit: int) -> list[OrderId]:
+        # Non-locking by design, like due_for_expiry (issue #65): the batch is read
+        # in a short transaction that closes before the sweep re-allocates each
+        # order in its own transaction, so a row lock would not survive to
+        # partition work. One replica per worker type is the contract (ADR-0030);
+        # the order-header CAS makes a duplicate sweep a no-op, not a double-act.
         rows = await self._conn.execute(
             select(orders.c.order_id)
             .where(orders.c.state == OrderState.BACKORDERED.value)
@@ -527,6 +532,13 @@ class PgReservationRepo:
         return result.rowcount == 1
 
     async def due_for_expiry(self, now: datetime, limit: int) -> list[Reservation]:
+        # No FOR UPDATE SKIP LOCKED here, deliberately (issue #65): this batch is
+        # read in its own short transaction that closes before the reaper acts on
+        # each item in a separate per-item transaction (ADR-0017), so any lock
+        # would release immediately and partition nothing. Running one replica per
+        # worker type is the operational contract (ADR-0030); the per-item
+        # transition CAS is the correctness backstop if that is ever violated --
+        # a duplicate read just no-ops on the lost CAS, never double-acts.
         rows = await self._conn.execute(
             select(reservation)
             .where(
@@ -657,6 +669,11 @@ class PgIdempotencyRepo:
             )
 
     async def delete_expired(self, before: datetime, limit: int) -> int:
+        # FOR UPDATE SKIP LOCKED on the candidate subquery so a second reaper
+        # claims a disjoint batch instead of blocking on the rows a first is
+        # mid-deleting (issue #65). This DELETE is one statement, so the lock is
+        # held for the delete -- unlike the reservation/backorder selects, whose
+        # batch is read in a separate short transaction (see due_for_expiry).
         result = await self._conn.execute(
             text(
                 """
@@ -666,6 +683,7 @@ class PgIdempotencyRepo:
                       WHERE created_at < :before
                       ORDER BY created_at
                       LIMIT :limit
+                      FOR UPDATE SKIP LOCKED
                  )
                 """
             ),
