@@ -17,6 +17,18 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="QM_")
 
     database_url: str
+    # Async engine pool and server-side timeouts (issue #37). The OCC-retry
+    # envelope takes a fresh connection per attempt, so the pool is sized above
+    # the library default to avoid starving under contention; pre-ping discards a
+    # dropped backend before first use. statement/lock timeouts bound a runaway
+    # query or a row-lock wait behind a stuck transaction so it fails fast
+    # instead of hanging (the per-tick worker watchdog, #75, is the complement).
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
+    db_pool_timeout_s: float = 30.0
+    db_pool_pre_ping: bool = True
+    db_statement_timeout_ms: int = 30000
+    db_lock_timeout_ms: int = 5000
     reservation_reaper_interval_s: float = 60.0
     idempotency_reaper_interval_s: float = 3600.0
     reaper_batch_size: int = 500

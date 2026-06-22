@@ -49,7 +49,16 @@ def _translate_transient_conflicts(context: ExceptionContext) -> None:
         ) from context.original_exception
 
 
-def create_engine(database_url: str) -> AsyncEngine:
+def create_engine(
+    database_url: str,
+    *,
+    pool_size: int = 10,
+    max_overflow: int = 20,
+    pool_timeout: float = 30.0,
+    pool_pre_ping: bool = True,
+    statement_timeout_ms: int = 30000,
+    lock_timeout_ms: int = 5000,
+) -> AsyncEngine:
     """Build the async engine for ``database_url`` (a ``postgresql+asyncpg://`` URL).
 
     The isolation level is pinned to READ COMMITTED on the engine so the design's
@@ -59,7 +68,31 @@ def create_engine(database_url: str) -> AsyncEngine:
     is reasoned under READ COMMITTED (ADR-0005, ADR-0016); a stricter server
     default would otherwise turn clean guard-rejects into 40001 retries (issue
     #71). The pin applies on every new connection and is reset on return to pool.
+
+    Pool sizing, ``pool_pre_ping``, and server-side ``statement_timeout`` /
+    ``lock_timeout`` are configured rather than left at library defaults (issue
+    #37): the OCC-retry envelope takes a fresh connection per attempt, so a
+    too-small pool starves under contention; pre-ping discards a dropped backend
+    before first use; and the timeouts bound a runaway query or a row-lock wait
+    behind a stuck transaction so it fails fast instead of blocking indefinitely.
+    The timeouts are sent as asyncpg ``server_settings`` (bare integers are
+    milliseconds), so they apply to every statement on every connection. The
+    composition root wires the values from :class:`Settings`; the defaults here
+    mirror those so direct callers and tests get the same safe configuration.
     """
-    engine = create_async_engine(database_url, isolation_level="READ COMMITTED")
+    engine = create_async_engine(
+        database_url,
+        isolation_level="READ COMMITTED",
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+        pool_timeout=pool_timeout,
+        pool_pre_ping=pool_pre_ping,
+        connect_args={
+            "server_settings": {
+                "statement_timeout": str(statement_timeout_ms),
+                "lock_timeout": str(lock_timeout_ms),
+            }
+        },
+    )
     event.listen(engine.sync_engine, "handle_error", _translate_transient_conflicts)
     return engine

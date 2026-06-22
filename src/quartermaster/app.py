@@ -18,6 +18,7 @@ from contextlib import asynccontextmanager, suppress
 from datetime import timedelta
 
 from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from quartermaster.adapters.postgres.engine import create_engine
 from quartermaster.adapters.postgres.identifiers import (
@@ -40,10 +41,23 @@ from quartermaster.workers.loop import run_forever
 from quartermaster.workers.reservation_reaper import reap_reservations
 
 
+def _engine_from(settings: Settings) -> AsyncEngine:
+    """Build the async engine from settings: pool sizing + server-side timeouts (#37)."""
+    return create_engine(
+        settings.database_url,
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+        pool_timeout=settings.db_pool_timeout_s,
+        pool_pre_ping=settings.db_pool_pre_ping,
+        statement_timeout_ms=settings.db_statement_timeout_ms,
+        lock_timeout_ms=settings.db_lock_timeout_ms,
+    )
+
+
 def build_app() -> FastAPI:
     """Assemble the production app: engine, seams, routes, and lifecycle."""
     settings = Settings()
-    engine = create_engine(settings.database_url)
+    engine = _engine_from(settings)
     deps = Deps(
         uow_factory=postgres_uow_factory(engine),
         read_uow_factory=postgres_read_uow_factory(engine),
@@ -66,7 +80,7 @@ async def run_workers() -> None:
     """Run the polled background reapers until SIGTERM/SIGINT (the worker process)."""
     logging.basicConfig(level=logging.INFO)
     settings = Settings()
-    engine = create_engine(settings.database_url)
+    engine = _engine_from(settings)
     factory = postgres_uow_factory(engine)
     stop = asyncio.Event()
 
