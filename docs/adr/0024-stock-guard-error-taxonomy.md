@@ -73,3 +73,25 @@ transient business failure — it is rolled back and surfaced as an alarm.
 - The envelope's exception ladder now has four arms (OCC retry, transient
   roll-back, invariant-breach roll-back, hard-rejection finalize), each with a
   distinct idempotency outcome.
+
+## Amendment (2026-06-22, #77)
+
+`add_on_hand` gains an *upper* guard, extending this taxonomy with one more
+stock-guard rejection. The increment now rejects `qty_on_hand + qty > MAX_QTY`
+(the signed 32-bit column ceiling) in its `ON CONFLICT DO UPDATE ... WHERE`,
+phrased `qty_on_hand <= MAX_QTY - qty` so the comparison itself never overflows
+int4. A 0-rowcount returns `False`, and `receive` / `putaway` raise the new
+**`QuantityCeilingExceeded`**.
+
+It is classified exactly like `StockConflict`: **`TRANSIENT`** (rolled back,
+re-raised, not finalized; the rollback discards any lines already moved in the
+putaway loop) and mapped to **`409 quantity_ceiling_exceeded`**. "No room right
+now" is the mirror of "not enough stock right now" — a foreseeable boundary on a
+hot cell, replayable once the cell drains, not a deterministic property of the
+command and not a server breach. Before this, the cumulative increment crossed
+the int4 range and asyncpg raised `numeric_value_out_of_range` (22003), which —
+unlike 40P01/40001 — was not translated and escaped as an opaque `500`
+(residual of #31, whose per-line `le=MAX_QTY` bound does not cover a running
+total). The guard now prevents the overflow on the only path that raises
+on-hand, so the int4 column type remains the backstop and no separate CHECK or
+22003 translation is required.

@@ -17,6 +17,7 @@ from quartermaster.domain.catalog import LocationKind
 from quartermaster.domain.errors import (
     IllegalTransition,
     LocationKindMismatch,
+    QuantityCeilingExceeded,
     ReceiptNotFound,
     StockConflict,
     UnknownLocation,
@@ -102,6 +103,15 @@ async def test_putaway_relocates_each_line_and_advances() -> None:
     assert [(c[1], c[2], c[3]) for c in receipts.cas_calls] == [
         (ReceiptState.RECEIVED, 3, ReceiptState.PUTAWAY_COMPLETE)
     ]
+
+
+async def test_putaway_quantity_ceiling_rejected() -> None:
+    # The destination shelf would overflow the int4 cell: add_on_hand's guard returns
+    # False, and putaway raises a clean ceiling rejection rather than an opaque 500 (#77).
+    uow, _, stock, _ = _harness(receipt=_receipt(), lines=[_line("A", 5)])
+    stock.add_on_hand_result = False
+    with pytest.raises(QuantityCeilingExceeded):
+        await _run(uow)
 
 
 async def test_putaway_skips_zero_received_lines() -> None:

@@ -29,6 +29,7 @@ from quartermaster.domain.errors import (
     InvariantViolation,
     LocationKindMismatch,
     OrderNotFound,
+    QuantityCeilingExceeded,
     ReceiptNotFound,
     ReturnNotAllowed,
     StockConflict,
@@ -87,8 +88,14 @@ HARD_REJECTION: tuple[type[Exception], ...] = (
 # Business shortfalls: rolled back so the key is not persisted and a later retry
 # may succeed. StockConflict (putaway from a cell lacking the unreserved stock)
 # joins InsufficientStock here -- both are "not enough stock right now" outcomes
-# on otherwise-valid input, not consistency breaches (ADR-0024).
-TRANSIENT: tuple[type[Exception], ...] = (InsufficientStock, StockConflict)
+# on otherwise-valid input, not consistency breaches (ADR-0024). QuantityCeilingExceeded
+# (a cell at the int4 on-hand ceiling) is the mirror image -- "no room right now" --
+# replayable once the cell drains, so it joins them rather than caching (#77).
+TRANSIENT: tuple[type[Exception], ...] = (
+    InsufficientStock,
+    StockConflict,
+    QuantityCeilingExceeded,
+)
 
 
 class Command(Protocol):

@@ -126,10 +126,13 @@ class StockRepo(Protocol):
         """
         ...
 
-    async def add_on_hand(self, sku: SkuId, location: LocationId, qty: int) -> None:
+    async def add_on_hand(self, sku: SkuId, location: LocationId, qty: int) -> bool:
         """Receive: ``qty_on_hand += qty`` at the cell, inserting it at reserved=0 if absent.
 
-        Always succeeds — on-hand only grows on receipt; there is no availability guard.
+        Guarded only at the upper bound: the write rejects ``qty_on_hand + qty > MAX_QTY``
+        (the signed 32-bit column ceiling). Returns True if the row was inserted/updated,
+        False if that ceiling guard rejected it (the caller raises ``QuantityCeilingExceeded``).
+        There is no lower/availability guard — on-hand only grows on receipt.
         """
         ...
 

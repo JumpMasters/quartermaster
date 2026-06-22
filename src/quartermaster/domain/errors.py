@@ -39,6 +39,15 @@ class StockConflict(QuartermasterError):
     not the server-side :class:`InvariantViolation` breach."""
 
 
+class QuantityCeilingExceeded(QuartermasterError):
+    """Receiving/putting away the quantity would push a cell's ``qty_on_hand``
+    past the signed 32-bit column ceiling (``MAX_QTY``). The ``add_on_hand`` guard
+    rejects it before the int4 overflow, so a hot cell hammered to the ceiling is a
+    foreseeable, classified 409 -- the same stock-guard family as
+    :class:`StockConflict` (transient: rolled back, replayable once the cell
+    drains) -- not an opaque numeric-overflow 500 (issue #77)."""
+
+
 class IdempotencyKeyReuse(QuartermasterError):
     """An idempotency key was reused with a different command fingerprint."""
 
