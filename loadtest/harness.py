@@ -10,16 +10,29 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from loadtest.metrics import StrategyMetrics, summarize
 from loadtest.runner import drive
-from loadtest.strategies import STRATEGIES
+from loadtest.strategies import STRATEGIES, guarded_uow_factory
 from loadtest.workload import allocate_thunk, seed_comparative, truncate_all
+from quartermaster.adapters.postgres.identifiers import new_order_id
+from quartermaster.adapters.postgres.tables import (
+    location,
+    movement,
+    order_line,
+    orders,
+    reservation,
+    sku,
+    stock,
+)
 from quartermaster.adapters.postgres.unit_of_work import postgres_read_uow_factory
 from quartermaster.application.oracle import OracleReport, run_oracle
 from quartermaster.domain.ids import IdempotencyKey
+from quartermaster.domain.state_machines import OrderState
 
 
 @dataclass(frozen=True)
@@ -99,3 +112,72 @@ async def comparative_sweep(
         )
         for name in ("naive", "read_cas", "guarded")
     ]
+
+
+@dataclass(frozen=True)
+class ExactlyOnceResult:
+    """Witnesses that K concurrent fires of one key applied exactly once."""
+
+    reserved: int
+    movement_rows: int
+    reservation_rows: int
+
+
+async def assert_exactly_once(engine: AsyncEngine, *, k: int, qty: int) -> ExactlyOnceResult:
+    """Fire one idempotency key ``k`` times concurrently; read the single effect.
+
+    The oracle reports ``exactly_once = NOT_CHECKED`` because conservation cannot
+    witness a lockstep double-apply (ADR-0023); this asserts it directly, as the
+    oracle module docstring prescribes (design spec §7.3).
+    """
+    await truncate_all(engine)
+    order_id = new_order_id()
+    async with engine.begin() as conn:
+        await conn.execute(sku.insert().values(sku_id="ONCE", description="x", unit="each"))
+        await conn.execute(location.insert().values(location_id="S0", kind="shelf"))
+        await conn.execute(
+            stock.insert().values(sku_id="ONCE", location_id="S0", qty_on_hand=qty, qty_reserved=0)
+        )
+        await conn.execute(
+            orders.insert().values(
+                order_id=order_id,
+                state=OrderState.CREATED.value,
+                version=1,
+                created_at=datetime.now(UTC),
+            )
+        )
+        await conn.execute(
+            order_line.insert().values(
+                order_id=order_id,
+                sku_id="ONCE",
+                ordered_qty=qty,
+                allocated_qty=0,
+                picked_qty=0,
+                shipped_qty=0,
+            )
+        )
+    uow_factory = guarded_uow_factory(engine)
+    key = IdempotencyKey("once")
+    thunks = [allocate_thunk(uow_factory, order_id, key) for _ in range(k)]
+    await drive(thunks, concurrency=k, rand=random.Random(0).random)
+    async with engine.connect() as conn:
+        reserved = (
+            await conn.execute(select(stock.c.qty_reserved).where(stock.c.sku_id == "ONCE"))
+        ).scalar_one()
+        movement_rows = (
+            await conn.execute(
+                select(func.count()).select_from(movement).where(movement.c.command_id == "once")
+            )
+        ).scalar_one()
+        reservation_rows = (
+            await conn.execute(
+                select(func.count())
+                .select_from(reservation)
+                .where(reservation.c.order_id == order_id)
+            )
+        ).scalar_one()
+    return ExactlyOnceResult(
+        reserved=int(reserved),
+        movement_rows=int(movement_rows),
+        reservation_rows=int(reservation_rows),
+    )
