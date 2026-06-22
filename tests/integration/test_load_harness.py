@@ -1,4 +1,4 @@
-"""The PR gate: a scaled-down deterministic sweep proving the marquee result.
+"""The PR gate: a scaled-down deterministic sweep proving the bug→fix→proof result.
 
 guarded → oracle green & 0 oversell; naive → oracle red & oversell > 0 (the
 falsification control proving the harness can see oversell); read-CAS → green but
