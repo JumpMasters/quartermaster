@@ -68,12 +68,16 @@ class StockLevel:
     def pick(self, qty: int) -> StockLevel:
         """Consume ``qty`` of reservation, removing it from the shelf (pick).
 
-        Lowers both on-hand and reserved. Guard: ``reserved >= qty``. Raises
-        :class:`InsufficientStock` otherwise.
+        Lowers both on-hand and reserved. Guard: ``reserved >= qty``. Picking
+        more than is held would drive reserved negative -- an invariant breach,
+        not a shortage -- so it raises :class:`InvariantViolation`, the same
+        classification as :meth:`release` for the identical guard. A shortage of
+        *free* stock is the allocation concern checked by :meth:`reserve`; once a
+        reservation is held, the order line guarantees the pick never exceeds it.
         """
         _require_non_negative(qty)
         if qty > self.reserved:
-            raise InsufficientStock(f"cannot pick {qty}: only {self.reserved} reserved")
+            raise InvariantViolation(f"cannot pick {qty}: only {self.reserved} reserved")
         return StockLevel(on_hand=self.on_hand - qty, reserved=self.reserved - qty)
 
     def release(self, qty: int) -> StockLevel:
