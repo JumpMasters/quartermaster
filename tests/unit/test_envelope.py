@@ -7,7 +7,15 @@ from typing import Any
 
 import pytest
 
-from quartermaster.application.envelope import HARD_REJECTION, _rejection_error, execute
+from quartermaster.application.envelope import (
+    HARD_REJECTION,
+    MAX_OCC_RETRIES,
+    OCC_BACKOFF_BASE_S,
+    OCC_BACKOFF_CAP_S,
+    _occ_backoff_delay,
+    _rejection_error,
+    execute,
+)
 from quartermaster.application.errors import OccConflict, RetryExhausted
 from quartermaster.application.ports import ClaimOutcome, StoredResponse, UnitOfWork
 from quartermaster.domain.errors import (
@@ -150,6 +158,10 @@ async def test_fingerprint_mismatch_raises_key_reuse() -> None:
         await execute(fake_factory(uow), FakeCommand(), handler, decode_fake)
 
 
+async def _noop_sleep(_seconds: float) -> None:
+    return None
+
+
 async def test_occ_conflict_retries_then_succeeds() -> None:
     idempotency = FakeIdempotencyRepo()
     uow = FakeUnitOfWork(idempotency=idempotency)
@@ -161,7 +173,9 @@ async def test_occ_conflict_retries_then_succeeds() -> None:
             raise OccConflict("cas miss")
         return FakeResult(5)
 
-    result = await execute(fake_factory(uow), FakeCommand(), handler, decode_fake)
+    result = await execute(
+        fake_factory(uow), FakeCommand(), handler, decode_fake, sleep=_noop_sleep
+    )
 
     assert result == FakeResult(5)
     assert attempts["n"] == 2
@@ -175,9 +189,61 @@ async def test_occ_conflict_exhausts_retries() -> None:
         raise OccConflict("always")
 
     with pytest.raises(RetryExhausted):
-        await execute(fake_factory(uow), FakeCommand(), handler, decode_fake)
+        await execute(fake_factory(uow), FakeCommand(), handler, decode_fake, sleep=_noop_sleep)
 
     assert uow.commits == 0
+
+
+def test_occ_backoff_delay_is_full_jitter_exponential() -> None:
+    # rand=1.0 yields the ceiling of each step: base * 2**attempt.
+    assert _occ_backoff_delay(0, lambda: 1.0) == pytest.approx(OCC_BACKOFF_BASE_S)
+    assert _occ_backoff_delay(1, lambda: 1.0) == pytest.approx(OCC_BACKOFF_BASE_S * 2)
+    assert _occ_backoff_delay(3, lambda: 1.0) == pytest.approx(OCC_BACKOFF_BASE_S * 8)
+
+
+def test_occ_backoff_delay_is_capped() -> None:
+    # A large attempt index does not grow the window past the cap.
+    assert _occ_backoff_delay(50, lambda: 1.0) == pytest.approx(OCC_BACKOFF_CAP_S)
+
+
+def test_occ_backoff_delay_scales_with_jitter() -> None:
+    # Full jitter: the actual delay is a uniform fraction of the window.
+    assert _occ_backoff_delay(0, lambda: 0.0) == 0.0
+    assert _occ_backoff_delay(2, lambda: 0.5) == pytest.approx(0.5 * OCC_BACKOFF_BASE_S * 4)
+
+
+async def test_occ_retries_back_off_between_attempts_with_jitter() -> None:
+    uow = FakeUnitOfWork()
+    slept: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    async def handler(u: UnitOfWork, c: FakeCommand) -> FakeResult:
+        raise OccConflict("always")
+
+    with pytest.raises(RetryExhausted):
+        await execute(
+            fake_factory(uow), FakeCommand(), handler, decode_fake, sleep=sleep, rand=lambda: 1.0
+        )
+
+    # MAX_OCC_RETRIES attempts -> a backoff between each pair, none after the last.
+    assert slept == [_occ_backoff_delay(i, lambda: 1.0) for i in range(MAX_OCC_RETRIES - 1)]
+
+
+async def test_replay_branch_does_not_back_off() -> None:
+    stored = StoredResponse("fp", IdempotencyStatus.SUCCEEDED, {"value": 42})
+    uow = FakeUnitOfWork(idempotency=FakeIdempotencyRepo(ClaimOutcome.EXISTS, stored))
+    slept: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    async def handler(u: UnitOfWork, c: FakeCommand) -> FakeResult:
+        raise AssertionError("handler must not run on replay")
+
+    await execute(fake_factory(uow), FakeCommand(), handler, decode_fake, sleep=sleep)
+    assert slept == []  # the idempotency-claim (EXISTS) branch is backoff-free
 
 
 async def test_replay_of_cached_rejection_reraises() -> None:

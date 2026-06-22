@@ -7,6 +7,7 @@ translate errors themselves; they raise, and these handlers map.
 
 from __future__ import annotations
 
+import random
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request
@@ -58,14 +59,24 @@ _STATUS_MAP: tuple[tuple[type[Exception], int, str], ...] = (
 
 _Handler = Callable[[Request, Exception], Awaitable[JSONResponse]]
 
+# A jittered, non-zero Retry-After for the 503 (RetryExhausted). Advertising 0
+# invited every contending client to rejoin the herd on the same beat; a small
+# random spread lets the contention drain instead (issue #72).
+RETRY_AFTER_MIN_S = 1
+RETRY_AFTER_MAX_S = 3
+
 
 def _error_body(code: str, detail: str) -> dict[str, str]:
     return {"error": code, "detail": detail}
 
 
+def _retry_after_seconds() -> str:
+    return str(random.randint(RETRY_AFTER_MIN_S, RETRY_AFTER_MAX_S))
+
+
 def _make_handler(status: int, code: str) -> _Handler:
     async def handler(request: Request, exc: Exception) -> JSONResponse:
-        headers = {"Retry-After": "0"} if status == 503 else None
+        headers = {"Retry-After": _retry_after_seconds()} if status == 503 else None
         return JSONResponse(
             status_code=status, content=_error_body(code, str(exc)), headers=headers
         )

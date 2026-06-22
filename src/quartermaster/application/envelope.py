@@ -10,6 +10,8 @@ conflated (design §5.4).
 
 from __future__ import annotations
 
+import asyncio
+import random
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
@@ -33,6 +35,21 @@ from quartermaster.domain.idempotency import IdempotencyStatus
 from quartermaster.domain.ids import IdempotencyKey
 
 MAX_OCC_RETRIES = 5
+# Bounded exponential backoff with full jitter between OCC retries. A loser that
+# re-runs instantly against the same hot rows can re-form the ABBA deadlock
+# (ADR-0019) or re-lose the same CAS and burn its whole budget in microseconds,
+# returning 503 where a few ms of spacing would have let it commit. Full jitter
+# (delay uniform in [0, window]) also de-synchronizes a contending herd so they
+# do not all retry on the same beat. Tuned for hot-row contention, not slow I/O.
+OCC_BACKOFF_BASE_S = 0.01
+OCC_BACKOFF_CAP_S = 0.2
+
+
+def _occ_backoff_delay(attempt: int, rand: Callable[[], float]) -> float:
+    """Full-jitter exponential delay for retry ``attempt`` (0-based)."""
+    window = min(OCC_BACKOFF_CAP_S, OCC_BACKOFF_BASE_S * (2.0**attempt))
+    return rand() * window
+
 
 _REJECTION_TYPES: dict[str, type[Exception]] = {
     "IllegalTransition": IllegalTransition,
@@ -86,10 +103,13 @@ async def execute[C: Command, R: Response](
     command: C,
     handler: Callable[[UnitOfWork, C], Awaitable[R]],
     decode: Callable[[dict[str, Any]], R],
+    *,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    rand: Callable[[], float] = random.random,
 ) -> R:
     """Run ``command`` through the envelope and return its (fresh or replayed) result."""
     fingerprint = command.fingerprint()
-    for _attempt in range(MAX_OCC_RETRIES):
+    for attempt in range(MAX_OCC_RETRIES):
         async with uow_factory() as uow:
             if await uow.idempotency.claim(command.key, fingerprint) is ClaimOutcome.EXISTS:
                 stored = await uow.idempotency.load(command.key)
@@ -106,6 +126,11 @@ async def execute[C: Command, R: Response](
                 result = await handler(uow, command)
             except OccConflict:
                 await uow.rollback()
+                # Space the retries: a jittered pause lets the contending writer
+                # commit and de-synchronizes the herd before we re-run (issue
+                # #72). No pause after the final attempt -- we are about to raise.
+                if attempt < MAX_OCC_RETRIES - 1:
+                    await sleep(_occ_backoff_delay(attempt, rand))
                 continue
             except TRANSIENT:
                 await uow.rollback()

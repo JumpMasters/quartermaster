@@ -108,4 +108,6 @@ async def test_allocate_retry_exhausted_503() -> None:
     resp = await _post(uow)
     assert resp.status_code == 503
     assert resp.json()["error"] == "retry_exhausted"
-    assert resp.headers["Retry-After"] == "0"
+    # A non-zero, bounded Retry-After -- never "0", which would invite an instant
+    # herd rejoin (issue #72).
+    assert 1 <= int(resp.headers["Retry-After"]) <= 3

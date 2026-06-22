@@ -336,6 +336,25 @@ async def test_stock_conflict_maps_to_409() -> None:
     assert body == {"error": "stock_conflict", "detail": "from RCV: 5 not available"}
 
 
+async def test_retry_exhausted_503_advertises_a_bounded_nonzero_retry_after() -> None:
+    # The 503 status is the intended terminal (ADR-0020); the defect was the
+    # Retry-After: 0 header that invited an instant herd rejoin (issue #72).
+    from quartermaster.api.errors import RETRY_AFTER_MAX_S, RETRY_AFTER_MIN_S
+    from quartermaster.application.errors import RetryExhausted
+
+    transport = httpx.ASGITransport(
+        app=_raises_app(RetryExhausted(IdempotencyKey("k"))), raise_app_exceptions=False
+    )
+    async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+        resp = await client.get("/boom")
+
+    assert resp.status_code == 503
+    assert resp.json()["error"] == "retry_exhausted"
+    after = int(resp.headers["Retry-After"])
+    assert RETRY_AFTER_MIN_S <= after <= RETRY_AFTER_MAX_S
+    assert after >= 1  # never 0
+
+
 async def test_invariant_violation_maps_to_classified_500_without_leaking() -> None:
     # A genuine breach is a server-side alarm: a *classified* 500 (distinct from the
     # opaque internal_error catch-all) whose body does not leak the internal detail.
