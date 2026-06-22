@@ -68,3 +68,53 @@ def summarize(strategy: str, samples: list[CommandSample], wall_seconds: float) 
         transient=sum(1 for s in samples if s.outcome is Outcome.TRANSIENT),
         errors=sum(1 for s in samples if s.outcome is Outcome.ERROR),
     )
+
+
+_COLUMNS = (
+    ("strategy", 10),
+    ("thrpt/s", 10),
+    ("p50ms", 8),
+    ("p99ms", 8),
+    ("retries", 8),
+    ("exhaust", 8),
+    ("oversell", 9),
+    ("oracle", 7),
+)
+
+
+def report_to_dict(metrics: StrategyMetrics, oversell: int, oracle_ok: bool) -> dict[str, object]:
+    """A JSON-serializable record for one strategy's row."""
+    return {
+        "strategy": metrics.strategy,
+        "count": metrics.count,
+        "throughput": metrics.throughput,
+        "p50_ms": metrics.p50_ms,
+        "p99_ms": metrics.p99_ms,
+        "total_retries": metrics.total_retries,
+        "retry_exhausted": metrics.retry_exhausted,
+        "transient": metrics.transient,
+        "errors": metrics.errors,
+        "oversell": oversell,
+        "oracle_ok": oracle_ok,
+    }
+
+
+def render_table(rows: list[tuple[StrategyMetrics, int, bool]]) -> str:
+    """A fixed-width text table, one row per (metrics, oversell, oracle_ok)."""
+    header = " ".join(name.rjust(width) for name, width in _COLUMNS)
+    lines = [header, "-" * len(header)]
+    for metrics, oversell, oracle_ok in rows:
+        cells = (
+            metrics.strategy,
+            f"{metrics.throughput:.0f}",
+            f"{metrics.p50_ms:.1f}",
+            f"{metrics.p99_ms:.1f}",
+            str(metrics.total_retries),
+            str(metrics.retry_exhausted),
+            str(oversell),
+            "OK" if oracle_ok else "FAIL",
+        )
+        lines.append(
+            " ".join(str(c).rjust(width) for c, (_, width) in zip(cells, _COLUMNS, strict=True))
+        )
+    return "\n".join(lines)
