@@ -33,6 +33,7 @@ from quartermaster.application.ports import (
     OrderRepo,
     ReceiptRepo,
     ReservationRepo,
+    ReservedTotal,
     StockCell,
     StockRepo,
     StoredResponse,
@@ -172,6 +173,9 @@ class _NoopReservationRepo:
     async def due_for_expiry(
         self, now: datetime.datetime, limit: int
     ) -> list[Reservation]:  # pragma: no cover
+        return []
+
+    async def held_totals(self) -> list[ReservedTotal]:  # pragma: no cover
         return []
 
 

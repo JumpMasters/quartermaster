@@ -26,6 +26,7 @@ from enum import Enum, auto
 from quartermaster.application.ports import (
     LineQuantities,
     MovementTotal,
+    ReservedTotal,
     StockCell,
     UnitOfWorkFactory,
 )
@@ -175,15 +176,28 @@ def build_report(
     cells: list[StockCell],
     shipped: dict[SkuId, int],
     bad_lines: list[LineQuantities],
+    held: list[ReservedTotal],
 ) -> OracleReport:
     """Run all checks over already-read store contents (pure; no I/O)."""
     on_hand_ledger, reserved_ledger = reconstruct(totals)
     on_hand_actual = {(c.sku_id, c.location_id): c.on_hand for c in cells}
     reserved_actual = {(c.sku_id, c.location_id): c.reserved for c in cells}
+    held_by_cell: dict[Cell, int] = defaultdict(int)
+    for h in held:
+        held_by_cell[(h.sku_id, h.location_id)] += h.qty
     return OracleReport(
         checks=(
             _conservation("conservation_on_hand", on_hand_ledger, on_hand_actual, "on_hand"),
             _conservation("conservation_reserved", reserved_ledger, reserved_actual, "reserved"),
+            # The reservation table vs stock.qty_reserved: an orphaned HELD reservation
+            # (or reserved stock with no HELD backing) is invisible to the two ledger
+            # reconstructions above, since RESERVE/RELEASE pairs can net out (issue #68).
+            _conservation(
+                "reservation_reconciliation",
+                dict(held_by_cell),
+                reserved_actual,
+                "sum(held reservation.qty) vs stock.qty_reserved",
+            ),
             _no_oversell(totals, cells, shipped),
             _stock_bounds(cells),
             _state_integrity(bad_lines),
@@ -195,7 +209,7 @@ def build_report(
 async def run_oracle(uow_factory: UnitOfWorkFactory) -> OracleReport:
     """Read the store once (no commit) and return the invariant report.
 
-    The four reads cross-check aggregates against each other, so they must fold
+    The five reads cross-check aggregates against each other, so they must fold
     over a single instant. Pass a snapshot-isolated factory
     (``postgres_read_uow_factory``, REPEATABLE READ): under the engine's default
     READ COMMITTED each statement takes a fresh snapshot, so a command committing
@@ -209,4 +223,5 @@ async def run_oracle(uow_factory: UnitOfWorkFactory) -> OracleReport:
         cells = await uow.stock.all_cells()
         shipped = await uow.orders.shipped_by_sku()
         bad_lines = await uow.orders.lines_breaking_monotonic()
-    return build_report(totals, cells, shipped, bad_lines)
+        held = await uow.reservations.held_totals()
+    return build_report(totals, cells, shipped, bad_lines, held)

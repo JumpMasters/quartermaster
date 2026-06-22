@@ -37,7 +37,7 @@ from quartermaster.application.handlers.putaway import run_putaway
 from quartermaster.application.handlers.receive import run_receive
 from quartermaster.application.handlers.ship import run_ship
 from quartermaster.application.oracle import CheckStatus, run_oracle
-from quartermaster.application.ports import UnitOfWorkFactory
+from quartermaster.application.ports import ReservedTotal, UnitOfWorkFactory
 from quartermaster.domain.ids import IdempotencyKey, LocationId, SkuId
 from quartermaster.workers.reservation_reaper import reap_reservations
 from tests.integration.seed import seed_location, seed_sku
@@ -244,6 +244,58 @@ async def test_oracle_detects_oversell(committed_db: AsyncEngine) -> None:
         await conn.execute(text("DELETE FROM movement WHERE type='receive'"))
     report = await run_oracle(postgres_read_uow_factory(committed_db))
     assert report.check("no_oversell").status is CheckStatus.FAILED
+
+
+async def test_oracle_held_totals_adapter_read(committed_db: AsyncEngine) -> None:
+    await seed_sku(committed_db, "S")
+    await seed_location(committed_db, "DOCK", "receiving")
+    await seed_location(committed_db, "A1", "shelf")
+    factory = postgres_uow_factory(committed_db)
+    await _receive_and_putaway(factory, 10, tag="h")
+    o = await run_create_order(
+        factory, ((S, 3),), IdempotencyKey("o"), now=system_clock, new_order_id=new_order_id
+    )
+    await run_allocate(
+        factory,
+        o.order_id,
+        IdempotencyKey("o-al"),
+        now=system_clock,
+        new_reservation_id=new_reservation_id,
+        new_movement_id=new_movement_id,
+    )
+    async with factory() as uow:
+        held = await uow.reservations.held_totals()
+    assert held == [ReservedTotal(S, A1, 3)]
+
+
+async def test_oracle_detects_reservation_reconciliation_drift(committed_db: AsyncEngine) -> None:
+    await seed_sku(committed_db, "S")
+    await seed_location(committed_db, "DOCK", "receiving")
+    await seed_location(committed_db, "A1", "shelf")
+    factory = postgres_uow_factory(committed_db)
+    await _receive_and_putaway(factory, 5, tag="rr")
+    o = await run_create_order(
+        factory, ((S, 3),), IdempotencyKey("o"), now=system_clock, new_order_id=new_order_id
+    )
+    await run_allocate(
+        factory,
+        o.order_id,
+        IdempotencyKey("o-al"),
+        now=system_clock,
+        new_reservation_id=new_reservation_id,
+        new_movement_id=new_movement_id,
+    )
+    # CHECK-legal corruption: finalize the reservation without releasing stock.qty_reserved and
+    # without appending a RELEASE movement. The ledger still nets to reserved=3 and the stock row
+    # still reads 3, so conservation_reserved agrees -- but no HELD reservation now backs it.
+    async with committed_db.begin() as conn:
+        await conn.execute(text("UPDATE reservation SET state='released' WHERE state='held'"))
+    report = await run_oracle(postgres_read_uow_factory(committed_db))
+    rec = report.check("reservation_reconciliation")
+    assert rec.status is CheckStatus.FAILED
+    d = next(d for d in rec.discrepancies if d.location_id == A1)
+    assert (d.expected, d.actual) == (0, 3)  # held sums to 0, stock.qty_reserved is 3
+    assert report.check("conservation_reserved").status is CheckStatus.OK
 
 
 async def test_oracle_detects_reserved_drift(committed_db: AsyncEngine) -> None:

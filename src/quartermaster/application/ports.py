@@ -74,6 +74,20 @@ class StockCell:
 
 
 @dataclass(frozen=True)
+class ReservedTotal:
+    """HELD reservation.qty summed per (sku, location), for the oracle.
+
+    The offline oracle reconciles this against ``stock.qty_reserved`` per cell — a
+    source-of-truth cross-check the ledger-based reconstruction cannot make,
+    since RESERVE/RELEASE movements that net out leave no trace.
+    """
+
+    sku_id: SkuId
+    location_id: LocationId
+    qty: int
+
+
+@dataclass(frozen=True)
 class LineQuantities:
     """An order line's four quantity counters, for the oracle's state-integrity check."""
 
@@ -244,6 +258,10 @@ class ReservationRepo(Protocol):
 
     async def due_for_expiry(self, now: datetime, limit: int) -> list[Reservation]:
         """`held` reservations with ``expires_at <= now``, oldest first, at most ``limit``."""
+        ...
+
+    async def held_totals(self) -> list[ReservedTotal]:
+        """Sum of HELD ``reservation.qty`` per (sku, location). Read-only; offline oracle."""
         ...
 
 

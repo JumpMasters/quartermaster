@@ -22,6 +22,7 @@ from quartermaster.application.ports import (
     OrderRepo,
     ReceiptRepo,
     ReservationRepo,
+    ReservedTotal,
     StockCell,
     StockRepo,
     StoredResponse,
@@ -231,6 +232,7 @@ class FakeReservationRepo:
         *,
         transition_result: bool = True,
         due: list[Reservation] | None = None,
+        held_totals: list[ReservedTotal] | None = None,
     ) -> None:
         self.added: list[Reservation] = []
         self.held = held or []
@@ -238,6 +240,7 @@ class FakeReservationRepo:
         self.transitions: list[tuple[ReservationId, ReservationState, ReservationState]] = []
         self.due = list(due) if due is not None else []
         self.due_calls: list[tuple[datetime, int]] = []
+        self._held_totals = list(held_totals) if held_totals is not None else []
 
     async def add(self, reservation: Reservation) -> None:
         self.added.append(reservation)
@@ -254,6 +257,9 @@ class FakeReservationRepo:
     async def due_for_expiry(self, now: datetime, limit: int) -> list[Reservation]:
         self.due_calls.append((now, limit))
         return list(self.due[:limit])
+
+    async def held_totals(self) -> list[ReservedTotal]:
+        return list(self._held_totals)
 
 
 class FakeMovementRepo:

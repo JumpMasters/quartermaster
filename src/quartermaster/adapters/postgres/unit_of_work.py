@@ -42,6 +42,7 @@ from quartermaster.application.ports import (
     OrderRepo,
     ReceiptRepo,
     ReservationRepo,
+    ReservedTotal,
     StockCell,
     StockRepo,
     StoredResponse,
@@ -557,6 +558,22 @@ class PgReservationRepo:
                 qty=int(r.qty),
                 state=ReservationState(r.state),
                 expires_at=r.expires_at,
+            )
+            for r in rows
+        ]
+
+    async def held_totals(self) -> list[ReservedTotal]:
+        total = func.sum(reservation.c.qty).label("total_qty")
+        rows = await self._conn.execute(
+            select(reservation.c.sku_id, reservation.c.location_id, total)
+            .where(reservation.c.state == ReservationState.HELD.value)
+            .group_by(reservation.c.sku_id, reservation.c.location_id)
+        )
+        return [
+            ReservedTotal(
+                sku_id=SkuId(r.sku_id),
+                location_id=LocationId(r.location_id),
+                qty=int(r.total_qty),
             )
             for r in rows
         ]
