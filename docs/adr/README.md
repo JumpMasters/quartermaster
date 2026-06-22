@@ -38,6 +38,7 @@ The format follows Michael Nygard's
 - [0027 — Worker loop has a cancellable interval wait and a per-tick watchdog](0027-worker-cancellable-shutdown-and-tick-watchdog.md)
 - [0028 — OCC retries use jittered backoff; the 503 advertises a bounded Retry-After](0028-occ-retry-jittered-backoff.md)
 - [0029 — The idempotency write path is guarded against double-finalize and durable PENDING](0029-idempotency-write-path-hardening.md)
+- [0030 — One replica per worker type; only the idempotency GC partitions with SKIP LOCKED](0030-single-instance-workers-and-skip-locked-gc.md)
 
 ## Adding a record
 
