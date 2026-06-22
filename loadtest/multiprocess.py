@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import random
 from concurrent.futures import ProcessPoolExecutor
+from time import perf_counter
 from uuid import UUID
 
 from loadtest.harness import StrategyReport, violation_magnitude
@@ -75,6 +76,13 @@ async def multiprocess_sweep(
         slices = [ids[p::processes] for p in range(processes)]
         loop = asyncio.get_running_loop()
         with ProcessPoolExecutor(max_workers=processes) as pool:
+            # Parent-side wall spans the whole parallel run — from dispatch until
+            # the last slice returns — so it is the correct denominator for an
+            # aggregate throughput across overlapping workers (summing per-slice
+            # walls would double-count concurrent time). The comparative table's
+            # published numbers still come from the single-process run; this is
+            # the multi-process path's own end-to-end throughput.
+            start = perf_counter()
             futures = [
                 loop.run_in_executor(
                     pool, driven_slice, database_url, sl, f"mp-{p}", concurrency, seed + p
@@ -82,10 +90,9 @@ async def multiprocess_sweep(
                 for p, sl in enumerate(slices)
             ]
             results = await asyncio.gather(*futures)
+            wall = perf_counter() - start
         samples = [s for slice_samples in results for s in slice_samples]
-        # Wall here is approximate (post-hoc); the comparative table's throughput
-        # comes from the single-process run. summarize over the union for tallies.
-        metrics = summarize("guarded-mp", samples, wall_seconds=0.0)
+        metrics = summarize("guarded-mp", samples, wall_seconds=wall)
         oracle = await run_oracle(postgres_read_uow_factory(engine))
     finally:
         await engine.dispose()
