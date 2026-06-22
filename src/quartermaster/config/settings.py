@@ -22,3 +22,7 @@ class Settings(BaseSettings):
     reaper_batch_size: int = 500
     idempotency_ttl_hours: int = 24
     backorder_sweep_interval_s: float = 30.0
+    # Per-tick watchdog: a worker tick that overruns this is cancelled so a hung
+    # query or lock wait cannot pin a worker indefinitely (issue #75). A generous
+    # backstop above any healthy bounded-batch pass, not a tuning knob.
+    worker_tick_timeout_s: float = 120.0

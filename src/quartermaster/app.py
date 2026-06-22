@@ -100,22 +100,26 @@ async def run_workers() -> None:
             batch_size=settings.reaper_batch_size,
         )
 
+    watchdog = settings.worker_tick_timeout_s
     try:
         await asyncio.gather(
             run_forever(
                 reservation_tick,
                 interval=settings.reservation_reaper_interval_s,
                 stop=stop,
+                tick_timeout=watchdog,
             ),
             run_forever(
                 idempotency_tick,
                 interval=settings.idempotency_reaper_interval_s,
                 stop=stop,
+                tick_timeout=watchdog,
             ),
             run_forever(
                 sweep_tick,
                 interval=settings.backorder_sweep_interval_s,
                 stop=stop,
+                tick_timeout=watchdog,
             ),
         )
     finally:
