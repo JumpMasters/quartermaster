@@ -57,3 +57,39 @@ not supersede it.
   tests, which supply the inputs independently.
 - The oracle remains offline and read-only; production never sums the ledger, and
   rolling-checkpoint snapshots stay deferred (ADR-0011).
+
+## Amendment (2026-06-21, #69 / #73 / #68)
+
+The core decision stands; two justification clauses were overstated and are
+corrected here, and one check has been added.
+
+- **Exactly-once vs. a lockstep double-apply.** The Decision said a double-apply
+  "would surface here as conservation drift or oversell." That holds only for a
+  *torn* apply (one side persisted). Every handler drives the guarded stock
+  mutation and the appended movement from the same quantity in one transaction,
+  so a whole-command **lockstep** replay doubles the live balance *and* the ledger
+  reconstruction equally: conservation still agrees and `no_oversell` need not
+  trip. Exactly-once is therefore strictly stronger than conservation, not implied
+  by it. It rests on the idempotency claim (`ON CONFLICT DO NOTHING`) and is
+  asserted **directly** — one key fired K times concurrently, asserting the
+  balance delta and the per-`command_id` movement-row count both equal exactly one
+  — by the concurrency tests and the load harness, never by this audit (which
+  keeps it `NOT_CHECKED`).
+- **`no_oversell` and RMA receives.** `ever_received = Σ RECEIVE` counts
+  customer-RMA receives, which raise the ceiling in lockstep with the on-hand a
+  return adds. Restricting the ceiling to supplier receipts is algebraically
+  identical (returned units sit in `on_hand_total` too, so they move to the left
+  side unchanged), so the arithmetic is left as-is. Consequence: duplicate RMAs
+  against one shipped order (ADR-0022 defers a cumulative cap) manufacture real
+  on-hand with matching RECEIVE rows and `no_oversell` stays green — it must not
+  be relied on to detect duplicate-return phantom stock (#73). The load harness
+  caps one RMA per `(origin_order, sku)` instead.
+- **Effect-map totality.** The `type → effect` classification is now asserted
+  *total* over `MovementType` (a unit test fails CI if a new type is added without
+  a deliberate effect, including an explicit no-effect set), so a future type
+  cannot silently fold to zero in the reconstruction.
+- **Reservation reconciliation added (#68).** The oracle now also reconciles
+  `Σ HELD reservation.qty` against `stock.qty_reserved` per cell
+  (`reservation_reconciliation`), closing the reserved-side gap where an orphaned
+  HELD reservation whose RESERVE/RELEASE movements net out was invisible to the
+  ledger reconstruction.
